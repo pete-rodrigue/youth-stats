@@ -1,0 +1,420 @@
+---
+title: "DC Youth Stats"
+output:
+  html_document:
+    code_folding: hide
+date: "2026-08-12"
+---
+
+<style>
+  body { font-size: 18px; }
+  p { font-size: 18px; }
+</style>
+
+
+
+```{r setup, echo = T, warning=F, message=F, }
+knitr::opts_chunk$set(echo = T, warning=F, message=F, out.width = "100%")
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(readr)
+library(stringr)
+library(RColorBrewer)
+library(sf)
+
+setwd("~/GitHub/youth-stats")
+
+
+clean_data <- function(df) {
+  df %>%
+  pivot_longer(
+    cols = -c(  `School Name` 
+              , `State Name [Public School] Latest available year`
+              , `School ID (12-digit) - NCES Assigned [Public School] Latest available year`
+              ), 
+    names_to = c(".value", "school_year"),
+    names_pattern = "(.*)(.{7})$"
+  ) %>%
+    rename(
+        "id" = "School ID (12-digit) - NCES Assigned [Public School] Latest available year"
+      , "name" = "School Name"
+      , "state" = "State Name [Public School] Latest available year"   
+      ) %>%
+    rename_with(~ str_remove(., fixed("[Public School]")), everything()) %>%
+    rename_with(str_trim) %>%
+    filter(!is.na(state)) %>%
+    select(-state)
+}
+
+
+fmt <- function(num) {
+  format(round(num), big.mark=",")
+}
+
+
+
+# Data from here:
+# https://nces.ed.gov/ccd/elsi/tableGenerator.aspx
+
+
+df1 <- read_csv("~/GitHub/youth-stats/data/ELSI_csv_export_6392212884336770323709.csv", skip = 5) %>% 
+  clean_data(.) %>%
+  rename(lat=Latitude, lon=Longitude)
+
+df2 <- read_csv("~/GitHub/youth-stats/data/ELSI_csv_export_6392212902055494018674.csv", skip = 5) %>% 
+  clean_data(.)
+
+df3 <- read_csv("data/ELSI_csv_export_6392212906851656167285.csv", skip = 5) %>% 
+  clean_data(.) %>%
+  select(-`Grades 1-8 Students`, -`Grades 9-12 Students`)
+
+df4 <- read_csv("data/ELSI_csv_export_639221340086678151282.csv", skip=5) %>%
+  clean_data(.)
+
+df5 <- read_csv("data/ELSI_csv_export_6392213789371741314818.csv", skip=5) %>%
+  clean_data(.)
+
+df <-
+  dplyr::full_join(df1, df2, by = c("id", "name", "school_year")) %>%
+  dplyr::full_join(df3, by = c("id", "name", "school_year")) %>%
+  dplyr::full_join(df4, by = c("id", "name", "school_year")) %>%
+  dplyr::full_join(df5, by = c("id", "name", "school_year")) %>%
+  mutate(id = as.character(id)) %>%
+  mutate(across(everything(), ~ na_if(., "†"))) %>%
+  mutate(across(everything(), ~ na_if(., "–"))) %>%
+  mutate(across(everything(), ~ na_if(., "‡"))) %>%
+  rename(addr = `Location Address 1`) %>%
+  group_by(id, name) %>%
+  mutate(
+      lat = first(lat, na_rm = TRUE)
+    , lon = first(lon, na_rm = TRUE)
+    , addr = first(addr, na_rm = TRUE)
+    ) %>%
+  ungroup() %>%
+  mutate(school_year = as.numeric(str_sub(school_year, start = 1, end = 4))) %>%
+  mutate(across(-c(id, name, addr), as.numeric))
+
+
+rm(df1, df2, df3, df4, df5)
+
+tot_enroll <-
+  df %>%
+  group_by(school_year) %>%
+  summarise(
+      Total                 = sum(`Total Students All Grades (Excludes AE)`, na.rm=T)
+    , `Free Lunch Eligible` = sum(`Free Lunch Eligible`, na.rm=T)
+    , `Lower`               = sum(`Grades 1-8 Students`, na.rm=T)
+    , `Upper`               = sum(`Grades 9-12 Students`, na.rm=T)
+    , `Black`               = sum(`Black or African American Students`, na.rm=T)
+    , `White`               = sum(`White Students`, na.rm=T)
+    , `Hispanic`            = sum(`Hispanic Students`, na.rm=T)
+    , `AAPI`                = sum(`Asian or Asian/Pacific Islander Students`, na.rm=T)
+    , `Two or more`         = sum(`Two or More Races Students`, na.rm=T)
+    , `AIAN`                = sum(`American Indian/Alaska Native Students`, na.rm=T)
+    , Other                 = AAPI + AIAN + `Two or more`
+    , tot_race              = sum(`Total Race/Ethnicity`, na.rm=T)
+    , my_sum                = Black + Hispanic + Other + White
+    , diff                  = round((my_sum - tot_race)/ tot_race*100, 2)
+    , check_sum             = my_sum == tot_race
+    , .groups               = 'drop'
+  ) %>%
+  mutate(across(where(is.numeric), ~na_if(., 0)))
+```
+
+
+<br>
+
+Many U.S. cities have seen their youth-age populations decline. See [this WSJ piece](https://www.wsj.com/us-news/cities-losing-families-children-a860a9b1?st=w78QhH&reflink=desktopwebshare_permalink), for example. 
+
+DC is an exception. 
+
+This page looks at why that might be.
+
+
+
+# School enrollment data
+
+Total enrollment in DC Public Schools (including charter schools) has risen from roughly `r fmt(tot_enroll$Total[tot_enroll$school_year == 1990])` to `r fmt(tot_enroll$Total[tot_enroll$school_year == 2023])` since 1990.^[U.S. Department of Education, National Center for Education Statistics' [Common Core of Data](https://nces.ed.gov/ccd/elsi/tableGenerator.aspx)] All of this increase came after 2010. Black student enrollment fell, while Hispanic and White student enrollment increased significantly.^[Starting around 2010, the Department of Education started listing "2 or more races as an option"; this altered totals for the other groups.]
+
+<br>
+
+```{r}
+ms = 1.1
+total_col="steelblue"; black_col="#8d5524"; white_col="#ffdbac"
+hispa_col="#e0ac69"; other_col="#7B5E7B"
+plt1 <-
+  ggplot(tot_enroll %>% filter(school_year>=1990), aes(x=school_year)) +
+  geom_line(aes(y=Total,    color="All"),      linewidth=ms) +
+  geom_line(aes(y=Black,    color="Black"),    linewidth=ms) +
+  geom_line(aes(y=Hispanic, color="Hispanic"), linewidth=ms) +
+  geom_line(aes(y=Other,    color="Other"),    linewidth=ms) +
+  geom_line(aes(y=White,    color="White"),    linewidth=ms) +
+  # theme_minimal() +
+  scale_y_continuous(
+      labels = scales::label_comma()
+    , limits = c(0, 100e3)
+    ) +
+  scale_color_manual(values = c(
+              "All"=total_col
+            , "Black"=black_col
+            , "Hispanic"=hispa_col
+            , "Other"=other_col
+            , "White"=white_col
+            )) +
+  labs(x="", y="Enrollment", color = "",
+       caption="Data includes charter schools. 'Other' includes students listed as AAPI, AIAN, and 2+ races.\nSum of groups may not sum exactly to 'All' category.\nSource: U.S. Department of Education, National Center for Education Statistics",
+       title = "DCPS enrollment gains driven largely by Hispanic & White student enrollment"
+         ) +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    , panel.grid = element_blank()
+    )
+
+
+plt1
+```
+
+<br><br>
+
+
+Since 1990, Wards 1, 7, and 8 have lost students, at least according to the DoE data that lists school locations. Wards 2, 3, 4, and 5 have seen significant increases. The trend in Ward 6 has been mostly flat.
+
+<br>
+
+
+```{r}
+# Map schools
+wards <- sf::st_read("data/Ward_-_2022.geojson", quiet=T)
+
+points_sf <- df %>% 
+  select(name, id, lat, lon) %>% distinct() %>%
+  filter(!is.na(lat)) %>%
+  st_as_sf(coords = c("lon", "lat"), crs = 4326)
+
+joined_sf <- st_join(points_sf, wards, join = st_intersects) %>%
+  select(name, id, WARD) %>% distinct() %>% st_drop_geometry()
+
+df <- df %>%
+  dplyr::left_join(joined_sf, by=c("id", "name"))
+
+
+ward_enroll <- df %>%
+  group_by(WARD, school_year) %>%
+  summarise(
+      Total                 = sum(`Total Students All Grades (Excludes AE)`, na.rm=T)
+    , `Free Lunch Eligible` = sum(`Free Lunch Eligible`, na.rm=T)
+    , `Lower`               = sum(`Grades 1-8 Students`, na.rm=T)
+    , `Upper`               = sum(`Grades 9-12 Students`, na.rm=T)
+    , `Black`               = sum(`Black or African American Students`, na.rm=T)
+    , `White`               = sum(`White Students`, na.rm=T)
+    , `Hispanic`            = sum(`Hispanic Students`, na.rm=T)
+    , `AAPI`                = sum(`Asian or Asian/Pacific Islander Students`, na.rm=T)
+    , `Two or more`         = sum(`Two or More Races Students`, na.rm=T)
+    , `AIAN`                = sum(`American Indian/Alaska Native Students`, na.rm=T)
+    , Other                 = AAPI + AIAN + `Two or more`
+    , tot_race              = sum(`Total Race/Ethnicity`, na.rm=T)
+    , my_sum                = Black + Hispanic + Other + White
+    , diff                  = round((my_sum - tot_race)/ tot_race*100, 2)
+    , check_sum             = my_sum == tot_race
+    , .groups               = 'drop'
+  ) %>%
+  mutate(across(where(is.numeric), ~na_if(., 0))) %>%
+  filter(!(is.na(WARD)))
+
+
+plt2 <-
+  ggplot(ward_enroll, aes(x=school_year, y=Total)) +
+  geom_line(linewidth=ms-.2) +
+  scale_y_continuous(
+      labels = scales::label_comma()
+    , limits = c(3e3, 18e3)
+    ) +
+  facet_wrap(~WARD) +
+  labs(x="", y="Enrollment", 
+       caption="Data includes charter schools. Some schools that did not have location data are omitted. \nSource: U.S. Department of Education, National Center for Education Statistics",
+       title = "Enrollment up recently accross all wards, except wards 1, 7, and 8"
+         ) +
+  scale_color_brewer(palette = "Set1") +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    , panel.grid = element_blank()
+    )
+
+plt2
+```
+
+<br>
+
+The chart below shows how student populations have changed by Ward and demographic group. Hispanic and White enrollment have increased; Black enrollment has decreased.
+
+<br>
+
+
+
+```{r}
+ward_enroll_long <- ward_enroll %>%
+  select(WARD, school_year, Black, Hispanic, Other, White) %>%
+  pivot_longer(cols = -c(WARD, school_year), names_to = "Group", values_to = "Enrollment")
+
+plt3 <-
+  ggplot(ward_enroll_long, aes(x=school_year, y=Enrollment/1000, color=Group)) +
+  geom_line(linewidth=ms-.2) +
+  scale_y_continuous(
+      labels = scales::label_comma()
+    ) +
+  scale_color_manual(values = c(
+              "Black"=black_col
+            , "Hispanic"=hispa_col
+            , "Other"=other_col
+            , "White"=white_col
+            )) +
+  facet_wrap(~WARD, scales="free_y") +
+  labs(x="", y="Enrollment (in thousands)", color = "Ward",
+       caption="Data includes charter schools. Some schools that did not have location data are omitted. \nSource: U.S. Department of Education, National Center for Education Statistics",
+       title = "Enrollment up recently accross all wards, except wards 1, 7, and 8"
+         ) +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    , panel.grid = element_blank()
+    )
+
+plt3
+```
+
+
+<br><br>
+
+
+## The reversal of white flight
+
+Part of what is likely happening here is that white parents are more likely to move to the District (or remain in DC, if they were existing residents) than they were 40 years ago. This would be part of a broader trend: the reversal of white flight in large U.S. urban areas.
+
+
+```{r}
+library(tidycensus); library(purrr); library(patchwork)
+
+source("api_keys.R")
+
+races <- c(A = "White alone", B = "Black alone", C = "AIAN alone",
+           D = "Asian alone", E = "NHPI alone", F = "Some other race alone",
+           G = "Two or more races", H = "Hispanic or Latino",
+           I = "White alone, not Hispanic")
+
+spec <- tibble::tribble(
+  ~year, ~sumfile, ~stem,
+   2000,   "sf1",  "P034",
+   2010,   "sf1",  "P038",
+   2020,   "dhc",  "PCT10")
+
+get_one <- function(year, sumfile, stem, geography = "state", state = "DC") {
+  fmt <- if (year == 2020) \(s, i) sprintf("%s%s_%03dN", stem, s, i)
+         else              \(s, i) sprintf("%s%s%03d",   stem, s, i)
+  imap_dfr(races, function(lbl, sfx) {
+    vars <- setNames(fmt(sfx, 1:20), sprintf("c%02d", 1:20))
+    get_decennial(geography = geography, state = state, variables = vars,
+                  year = year, sumfile = sumfile, output = "wide", key = CENSUS_KEY) |>
+      mutate(race_hh = lbl, year = year)
+  })
+}
+
+raw <- pmap_dfr(spec, get_one)
+
+out <- raw |>
+  transmute(year, GEOID, NAME, race_hh,
+    families       = c01,
+    any_child_u18  = c03 + c10 + c16,
+    any_child_u6   = c04 + c05 + c11 + c12 + c17 + c18,
+    any_child_6_17 = c05 + c06 + c12 + c13 + c18 + c19) |>
+  arrange(year, race_hh)
+
+a <-
+  out %>%
+  filter(race_hh %in% c("Black alone", "Hispanic or Latino", "White alone")) %>%
+  ggplot(aes(x=race_hh, y=any_child_u6, fill=race_hh, group=factor(year))) +
+  geom_bar(stat="identity", position="dodge") +
+  scale_fill_manual(values = c(
+              "Black alone"=black_col
+            , "Hispanic or Latino"=hispa_col
+            , "White alone"=white_col
+            )) +
+  scale_y_continuous(labels = scales::label_comma()) +
+  labs(x="", y="", 
+       caption="Source: 2000, 2010, and 2020 Decennial Census."
+       # , title    = "Fewer Black families, more White families with young children"
+       , subtitle = "With children under 6"
+         ) +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    , panel.grid = element_blank()
+    ) +
+  guides(fill="none")
+
+b <-
+  out %>%
+  filter(race_hh %in% c("Black alone", "Hispanic or Latino", "White alone")) %>%
+  ggplot(aes(x=race_hh, y=any_child_6_17, fill=race_hh, group=factor(year))) +
+  geom_bar(stat="identity", position="dodge") +
+  scale_fill_manual(values = c(
+              "Black alone"=black_col
+            , "Hispanic or Latino"=hispa_col
+            , "White alone"=white_col
+            )) +
+  scale_y_continuous(labels = scales::label_comma()) +
+  labs(x="", y=""
+       , subtitle    = "With children 6-17"
+       # , subtitle = "Number of families with children under 6 in the 2000, 2010, and 2020 Censuses, by race"
+         ) +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    , panel.grid = element_blank()
+    ) +
+  guides(fill="none")
+
+a + b + plot_annotation(
+  title = 'Fewer Black families, more White families with young children',
+  subtitle = 'Number of families with children in the 2000, 2010, and 2020 Censuses',
+  theme = theme(plot.title = element_text(size = 16, face = 'bold'))
+)
+```
+
+<br>
+
+We can even see this reversal if look at popular baby names registered with the Social Security Administration. First names more commonly associated with white people in the Census have jumped up, after falling over the latter half of the 20th century.^[Kaplan, J (2023). predictrace: Predict the Race and Gender of a Given Name Using Census and Social Security Administration Data. Version 2.0.1. URL: https://github.com/jacobkap/predictrace, https://jacobkap.github.io/predictrace/.]^[Note that for some names, like "Aiden" or "Genesis" the `predictrace` package doesn't return results.] 
+
+<br>
+
+```{r}
+library(predictrace)
+library(readxl)
+library(zoo)
+
+# Data comes from here:
+# SSA baby names dataset for Washington DC
+# https://www.ssa.gov/cgi-bin/namesbystate.cgi
+
+names <- read_csv("data/DC.TXT", col_names = FALSE)
+names(names) <- c("state", "gender", "year", "name", "count")
+
+names$prob_w <- predictrace::predict_race(name = names$name, surname = F)$probability_white
+names$prob_b <- predictrace::predict_race(name = names$name, surname = F)$probability_black
+
+names %>% group_by(year) %>% summarise(mean = mean(prob_w, na.rm=T)) %>%
+  ggplot(aes(x=year, y=mean)) +
+  geom_point(color="steelblue", alpha=.8) +
+  geom_line(aes(y = rollmeanr(mean, 5, na.pad = T)), color = "black", linewidth=.75) +
+  theme_minimal() +
+  scale_y_continuous(labels=scales::label_percent()) +
+  labs(x="", y="Avg. modeled probability of 'white' name", color = "",
+       caption="Source: Social Security Administration Popular Baby Names",
+       title = "DC baby names track history of white flight (and return)"
+         ) +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    , panel.grid = element_blank()
+    )
+```
+
+
+
