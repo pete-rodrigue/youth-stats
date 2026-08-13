@@ -23,10 +23,331 @@ library(readr)
 library(stringr)
 library(RColorBrewer)
 library(sf)
+library(tidycensus) 
+library(purrr) 
+library(patchwork)
+library(plotly)
+library(readxl)
+
+
+source("api_keys.R")
 
 setwd("~/GitHub/youth-stats")
+ms=1.1
+total_col="steelblue"; black_col="#8d5524"; white_col="#ffdbac"
+hispa_col="#e0ac69"; other_col="#702963"
+
+fmt <- function(num) {
+  format(round(num), big.mark=",")
+}
+```
 
 
+<br>
+
+Many U.S. cities have seen their youth-age populations decline. See [this WSJ piece](https://www.wsj.com/us-news/cities-losing-families-children-a860a9b1?st=w78QhH&reflink=desktopwebshare_permalink), for example. 
+
+DC is an exception. 
+
+This page looks at why that might be.
+
+
+# How many kids live in DC?
+
+The chart below shows DC's youth population between 1990 and 2025. After falling between 1995 and 2010, the number has ticked up again, with a COVID-induced dip recently.
+
+<br>
+
+```{r}
+cpop <- read_excel("data/Child population by gender.xlsx") %>%
+  filter(Gender == "Total less than 18", DataFormat=="Number") %>%
+  mutate(count = as.numeric(Data), year=as.numeric(TimeFrame))
+
+ggplot(cpop, aes(x=year, y=as.numeric(count))) +
+  geom_line(linewidth = ms) +
+   scale_y_continuous(
+      labels = scales::label_comma()
+    , limits = c(0, 140e3)
+    ) +
+  labs(x="", y="Number of Children", 
+       caption="Chart shows population under 18. Source: KidsCount / The Annie E. Casey Foundation, U.S. Census Bureau",
+       title = "After falling from '95-'10, DC's youth population rose"
+         ) +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    # , panel.grid = element_blank()
+    )
+
+```
+
+
+<br>
+
+If we look farther back in time, we can see that DC's youth population used to be much higher, both in absolute and percentage terms. The percentage of children has continued to fall, even as the number has risen. (Note that this data uses "under 15" as opposed to "under 18.")
+
+<br>
+
+```{r}
+df <- read_excel("data/OP_pop_data.xlsx")
+
+a <- 
+  ggplot(df, aes(x=year, y=u15_pop)) +
+  geom_line(linewidth = ms) +
+  scale_y_continuous(labels = scales::label_comma(), limits = c(0, 200e3)) +
+  scale_x_continuous(n.breaks = 10) +
+  theme_minimal() +
+    theme(
+     plot.caption = element_text(hjust = 0)
+    # , panel.grid = element_blank()
+    ) +
+  labs(x="", y="Under 15 population")
+
+b <- 
+  ggplot(df, aes(x=year, y=u15_pct)) +
+  geom_line(linewidth = ms) +
+  scale_y_continuous(labels = scales::label_percent(), limits=c(0, .3)) +
+  scale_x_continuous(n.breaks = 10) +
+  theme_minimal() +
+    theme(
+     plot.caption = element_text(hjust = 0)
+    # , panel.grid = element_blank()
+    ) +
+  labs(x="", y="Under 15 population, as % of total pop.")
+
+a + b + plot_annotation(
+  title = "DC's youth population used to be much higher",
+  caption = 'Source: DC Office of Planning, U.S. Census Bureau',
+  theme = theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    )
+  )
+```
+
+
+
+```{r}
+
+sfx <- c("", "A","B","C","D","E","F","G","H","I")
+lbl <- c("Total, all races","White alone","Black alone","AIAN alone","Asian alone",
+         "NHPI alone","Some other race alone","Two or more races",
+         "Hispanic or Latino","White alone, not Hispanic")
+
+kid_cells <- c(3:6, 27:30)   # M/F: under 5, 5-9, 10-14, 15-17
+
+vfmt <- function(year, s, i)
+if (year == 2020) sprintf("P12%s_%03dN", s, i) else sprintf("P012%s%03d", s, i)
+
+pull_kids <- function(year, sumfile, geography, ...) {
+  map2_dfr(sfx, lbl, function(s, l) {
+    vars <- setNames(vfmt(year, s, c(1, kid_cells)),
+                     c("pop_total", paste0("c", kid_cells)))
+    get_decennial(geography = geography, variables = vars, year = year, key = CENSUS_KEY,
+                  sumfile = sumfile, output = "wide", ...) |>
+      mutate(race = l, year = year)
+  }) |>
+    mutate(children = rowSums(across(num_range("c", kid_cells)))) |>
+    transmute(GEOID, NAME, year, race,
+              population = pop_total,
+              children,
+              share_children = children / pop_total)
+}
+
+
+vint <- tibble::tibble(year = c(2000, 2010, 2020), sumfile = c("sf1","sf1","dhc"))
+all_counties <- map2_dfr(vint$year, vint$sumfile, ~pull_kids(.x, .y, "county"))
+
+# chk <- get_decennial("county", c(p1 = "P1_001N"), year = 2020, sumfile = "dhc", key = CENSUS_KEY)
+# all_counties |>
+#   filter(year == 2020, race=="Total, all races") |>
+#   inner_join(chk, by="GEOID") |>
+#   summarise(max_diff = max(abs(population - value)))
+
+xwalk <- tibble::tribble(
+  ~city,            ~state, ~county,
+  "New York",       "NY",  "Bronx County",
+  "New York",       "NY",  "Kings County",
+  "New York",       "NY",  "New York County",
+  "New York",       "NY",  "Queens County",
+  "New York",       "NY",  "Richmond County",
+  "Los Angeles",    "CA",  "Los Angeles County",
+  "Chicago",        "IL",  "Cook County",
+  "Houston",        "TX",  "Harris County",
+  "Phoenix",        "AZ",  "Maricopa County",
+  "Philadelphia",   "PA",  "Philadelphia County",
+  "San Antonio",    "TX",  "Bexar County",
+  "San Diego",      "CA",  "San Diego County",
+  "Dallas",         "TX",  "Dallas County",
+  "Jacksonville",   "FL",  "Duval County",
+  "Austin",         "TX",  "Travis County",
+  "Fort Worth",     "TX",  "Tarrant County",
+  "San Jose",       "CA",  "Santa Clara County",
+  "Columbus",       "OH",  "Franklin County",
+  "Charlotte",      "NC",  "Mecklenburg County",
+  "Indianapolis",   "IN",  "Marion County",
+  "San Francisco",  "CA",  "San Francisco County",
+  "Seattle",        "WA",  "King County",
+  "Denver",         "CO",  "Denver County",
+  "Oklahoma City",  "OK",  "Oklahoma County",
+  "Nashville",      "TN",  "Davidson County",
+  "Washington",     "DC",  "District of Columbia",
+  "El Paso",        "TX",  "El Paso County",
+  "Las Vegas",      "NV",  "Clark County",
+  "Boston",         "MA",  "Suffolk County",
+  "Detroit",        "MI",  "Wayne County",
+  "Portland",       "OR",  "Multnomah County",
+  "Louisville",     "KY",  "Jefferson County",
+  "Memphis",        "TN",  "Shelby County",
+  "Baltimore",      "MD",  "Baltimore city",
+  "Milwaukee",      "WI",  "Milwaukee County",
+  "Albuquerque",    "NM",  "Bernalillo County",
+  "Tucson",         "AZ",  "Pima County",
+  "Fresno",         "CA",  "Fresno County",
+  "Sacramento",     "CA",  "Sacramento County") |>
+  left_join(distinct(transmute(fips_codes, state, county,
+                               GEOID = paste0(state_code, county_code))),
+            by = c("state", "county"))
+
+stopifnot(!any(is.na(xwalk$GEOID)))   # catches any name I got wrong
+
+out_c <- all_counties |>
+  inner_join(xwalk, by = "GEOID") |>
+  arrange(city, year, race)
+```
+
+<br>
+
+Relative to other U.S. urban counties, DC has relatively few children, both in absolute terms, and as a share of its population. (Keep in mind that the data below pulls information at the county-level, so DC suburbs are excluded, which may make the counts look somewhat lower than in, say, Houston, where Harris County encompasses some of the city's suburbs).
+
+<br>
+
+```{r}
+a <- out_c %>% filter(race == "Total, all races", year==2020) %>%
+  group_by(city) %>%
+  summarise(children=sum(children, na.rm=T), .groups='drop') %>%
+  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
+  ggplot(aes(y=forcats::fct_reorder(city, children), x=children/1000, fill=factor(DC))) +
+  geom_bar(stat="identity") +
+  labs(x="Number of children (thousands)", y="") + 
+  guides(fill="none") +
+  scale_x_continuous(labels = scales::label_comma())
+
+b <- out_c %>% filter(race == "Total, all races", year==2020) %>%
+  group_by(city) %>%
+  summarise(
+      children=sum(children, na.rm=T)
+    , population=sum(population, na.rm=T)
+    , share_children = children / population
+    , .groups='drop') %>%
+  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
+  ggplot(aes(y=forcats::fct_reorder(city, share_children), x=share_children, fill=factor(DC))) +
+  geom_bar(stat="identity") +
+  labs(x="Children as share of population", y="") + 
+  guides(fill="none") +
+  scale_x_continuous(labels = scales::label_percent())
+
+a + b + plot_annotation(
+  title = 'DC has relatively few children',
+  caption = 'Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.',
+  theme = theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    )
+  )
+```
+
+<br>
+
+While some other cities have had longer-term increases in the number of children, DC's increase has been more of a return to a level previously seen in the 1990s. The line charts below show number of children in 2000, 2010, and 2020.
+
+<br>
+
+```{r}
+  out_c %>% filter(race == "Total, all races") %>%
+  group_by(year, city) %>% summarise(children = sum(children, na.rm=T), .groups='drop') %>%
+  group_by(city) %>%
+  mutate(rise = if_else(children[year==2010] < children[year==2020], 1, 0)) %>% ungroup() %>%
+  # mutate(rise = if_else(city == "Washington", 2, rise)) %>%
+  ggplot(aes(x=year, y=children, color=factor(rise))) +
+  geom_line() +
+  labs(x="", y="Number of children") +
+  guides(color="none") +
+  scale_x_continuous(n.breaks = 3) +
+  scale_color_manual(values = c("#FF3F00", "#70B77E")) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.y = element_blank(), # Removes the main Y-axis title ("mpg")
+    axis.text.y  = element_blank(), # Removes the tick labels (numbers)
+    axis.ticks.y = element_blank(), # Removes the small tick marks
+    
+    axis.ticks.x = element_blank(),  # Removes the small tick marks
+    axis.text.x  = element_blank()  # Removes the tick labels (numbers)
+  ) +
+  facet_wrap(~forcats::fct_reorder(city, rise), scales="free_y")
+```
+
+
+
+```{r}
+plt <-
+  ggplot(out_c %>% filter(city=="Washington", race != "White alone, not Hispanic") %>%
+           group_by(city, year) %>%
+           mutate(
+             race = case_when(
+               race %in% c(
+               "AIAN alone", "Asian alone", "NHPI alone", 
+               "Some other race alone", "Two or more races"
+             ) ~ "Other"
+             , race == "Black alone" ~ "Black"
+             , race == "Hispanic or Latino" ~ "Hispanic"
+             , race == "White alone" ~ "White"
+             , race == "Total, all races" ~ "All"
+             , .default = race
+             )
+           ) %>% ungroup() %>%
+           group_by(city, year, race) %>%
+           summarise(children = sum(children), .groups  = 'drop')
+         , aes(x=year, y=children, color=factor(race))
+         ) +
+  geom_line(linewidth=ms) +
+  scale_y_continuous(
+      labels = scales::label_comma()
+    # , limits = c(0, 115e3)
+    ) +
+  scale_color_manual(values = c(
+              "All"=total_col
+            , "Black"=black_col
+            , "Hispanic"=hispa_col
+            , "Other"=other_col
+            , "White"=white_col
+            )) +
+  labs(x="", y="Number of children", color="",
+       caption="Hispanic category not mutually exclusive with other categories.\nSource: U.S. Census Bureau, Decennial Census.",
+       title = "Children in DC by race"
+         ) +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    # , panel.grid = element_blank()
+    )
+```
+
+<br>
+
+While the numbers of Hispanic and White children have risen in DC since 2010, the number of Black children has continued to fall. 
+
+<br>
+
+
+```{r}
+plt
+```
+
+
+
+
+
+
+```{r}
 clean_data <- function(df) {
   df %>%
   pivot_longer(
@@ -49,9 +370,7 @@ clean_data <- function(df) {
 }
 
 
-fmt <- function(num) {
-  format(round(num), big.mark=",")
-}
+
 
 
 
@@ -123,27 +442,18 @@ tot_enroll <-
   mutate(across(where(is.numeric), ~na_if(., 0)))
 ```
 
-
 <br>
 
-Many U.S. cities have seen their youth-age populations decline. See [this WSJ piece](https://www.wsj.com/us-news/cities-losing-families-children-a860a9b1?st=w78QhH&reflink=desktopwebshare_permalink), for example. 
-
-DC is an exception. 
-
-This page looks at why that might be.
-
-
-
 # School enrollment data
+
+DC's school enrollment data mirrors these Census trends.
 
 Total enrollment in DC Public Schools (including charter schools) has risen from roughly `r fmt(tot_enroll$Total[tot_enroll$school_year == 1990])` to `r fmt(tot_enroll$Total[tot_enroll$school_year == 2023])` since 1990.^[U.S. Department of Education, National Center for Education Statistics' [Common Core of Data](https://nces.ed.gov/ccd/elsi/tableGenerator.aspx)] All of this increase came after 2010. Black student enrollment fell, while Hispanic and White student enrollment increased significantly.^[Starting around 2010, the Department of Education started listing "2 or more races as an option"; this altered totals for the other groups.]
 
 <br>
 
+
 ```{r}
-ms = 1.1
-total_col="steelblue"; black_col="#8d5524"; white_col="#ffdbac"
-hispa_col="#e0ac69"; other_col="#7B5E7B"
 plt1 <-
   ggplot(tot_enroll %>% filter(school_year>=1990), aes(x=school_year)) +
   geom_line(aes(y=Total,    color="All"),      linewidth=ms) +
@@ -287,16 +597,12 @@ plt3
 <br><br>
 
 
-## The reversal of white flight
+# The reversal of white flight
 
-Part of what is likely happening here is that white parents are more likely to move to the District (or remain in DC, if they were existing residents) than they were 40 years ago. This would be part of a broader trend: the reversal of white flight in large U.S. urban areas.
+Part of what is likely happening here is that white parents are more likely to move to the District (or remain in DC, if they were existing residents) than they were 40 years ago. This would be part of a broader trend: the reversal of white flight in large U.S. urban areas. Meanwhile, higher housing costs have led (or financially forced) many Black residents to move to the suburbs.^[See Yesim Sayin, Kids in the Neighborhood: The District Has More Children, But They Are Not Where They Used to Be. https://ora-cfo.dc.gov/blog/kids-neighborhood-district-has-more-children-they-are-not-where-they-used-be]
 
 
 ```{r}
-library(tidycensus); library(purrr); library(patchwork)
-
-source("api_keys.R")
-
 races <- c(A = "White alone", B = "Black alone", C = "AIAN alone",
            D = "Asian alone", E = "NHPI alone", F = "Some other race alone",
            G = "Two or more races", H = "Hispanic or Latino",
@@ -418,3 +724,125 @@ names %>% group_by(year) %>% summarise(mean = mean(prob_w, na.rm=T)) %>%
 
 
 
+
+# Marriage, birth, and fertility rate trends
+
+```{r}
+# Data from here:
+# https://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-birth-data-1982-2024
+df <- read_excel("data/ncfmr-dc-cntyyr-st-ntl-long-births-rates-1982-2024.xlsx")
+
+df <- dplyr::inner_join(
+    out_c %>% select(GEOID, NAME, city) %>% distinct()
+  , df, by = c("GEOID"="geoid"))
+```
+
+<br>
+
+The chart below shows the number of births in DC over time. The fact that DC's youth-age population has risen, even while the number of births has gone down since 2010 suggests a lot of the growth in the child population is due to people moving here with kids.
+
+<br>
+
+```{r}
+ggplot(df %>% filter(city=="Washington")
+       , aes(x=year, y=births)) +
+  geom_line(linewidth=ms) +
+  scale_y_continuous(limits = c(0, 12e3)) +
+  labs(x="", y="Births in DC", 
+       title="The number of births in DC has risen only slightly since 2000")
+```
+
+
+<br>
+
+Demographers calculate the "general fertility rate" by dividing the births by the female population ages 15 to 44, and multiplying by 1,000.^[https://www.ncbi.nlm.nih.gov/books/NBK215693/] The chart below shows DC's GFR over time. This has fallen continuously, which suggests that the increase in births observed above is due to general population increases.
+
+<br>
+
+```{r}
+ggplot(df %>% filter(city=="Washington")
+       , aes(x=year, y=gfr)) +
+  geom_line(linewidth=ms) +
+  scale_y_continuous(limits = c(0, 75)) +
+  labs(x="", y="General Fertility Rate", 
+       title="DC's GFR has fallen over time")
+```
+
+<br>
+
+DC's GFR is on the lower end among large U.S. cities.
+
+<br>
+
+
+```{r}
+df %>% filter(year==2024) %>%
+  group_by(city, year) %>%
+  summarise(
+      births=sum(births, na.rm=T)
+    , age1544_fem=sum(age1544_fem, na.rm=T)
+    , gfr = births / age1544_fem
+    , .groups='drop'
+    ) %>%
+  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
+  ggplot(aes(y=forcats::fct_reorder(city, gfr), x=gfr*1000, fill=factor(DC))) +
+  geom_bar(stat="identity") +
+  labs(x="GFR in 2024", y="") + 
+  guides(fill="none") +
+  # scale_x_continuous(labels = scales::label_comma()) +
+  labs(title="")
+
+```
+
+<br>
+
+The chart below shows general fertility rates for the counties encompassing different U.S. cities between 1982 and 2024. The vast majority of U.S. cities saw large declines in the GFR. DC's decline was sort of in the middle.
+
+<br>
+
+```{r}
+  df %>% 
+  group_by(city, year) %>%
+  summarise(
+      births=sum(births, na.rm=T)
+    , age1544_fem=sum(age1544_fem, na.rm=T)
+    , gfr = births / age1544_fem
+    , .groups='drop'
+    ) %>%
+  group_by(city) %>%
+  mutate(change = gfr[year==1985] - gfr[year==2024]) %>%
+  ungroup() %>%
+  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
+  ggplot(aes(x=year, y=gfr
+             , color=factor(DC)
+             )
+         ) +
+  geom_line() +
+  labs(x="", y="GFR") +
+  guides(color="none") +
+  scale_color_manual(values = c("black", "salmon")) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.y = element_blank(), # Removes the main Y-axis title ("mpg")
+    axis.text.y  = element_blank(), # Removes the tick labels (numbers)
+    axis.ticks.y = element_blank(), # Removes the small tick marks
+    
+    axis.ticks.x = element_blank(),  # Removes the small tick marks
+    axis.text.x  = element_blank()  # Removes the tick labels (numbers)
+  ) +
+  facet_wrap(~forcats::fct_reorder(city, change), scales="free_y")
+```
+
+
+<br>
+
+Finally, the chart below shows marriage
+
+<br>
+
+
+```{r}
+# Source: https://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-marriage-divorce-data-2011-2019.html
+df <- read_excel("data/CL-Mar-Div-2011-2019.xlsx")
+
+```
