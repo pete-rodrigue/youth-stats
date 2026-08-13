@@ -836,13 +836,66 @@ The chart below shows general fertility rates for the counties encompassing diff
 
 <br>
 
-Finally, the chart below shows marriage
+Finally, the chart below shows marriage and divorce counts.^[National Center for Family & Marriage Research (2023). County-level marriage and divorce data, United States, 2011-2019, (Version 1.0). Marriage, Divorce, & Birth Data Compass. Bowling Green State University. Retrieved from http://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-marriage-divorce-data-2011-2019.html ]
 
 <br>
 
 
 ```{r}
 # Source: https://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-marriage-divorce-data-2011-2019.html
-df <- read_excel("data/CL-Mar-Div-2011-2019.xlsx")
+df <- read_excel("data/CL-Mar-Div-2011-2019.xlsx") %>%
+  select(STATE, COUNTY, GISJOIN, starts_with("M"), starts_with("D")) %>%
+  pivot_longer(cols = -c(STATE, COUNTY, GISJOIN)
+               , names_to = c(".value", "year")
+               , names_pattern = "^(.*)([0-9]{4})$"
+               ) %>%
+  mutate(year = as.numeric(year))
 
+ggplot(df %>% filter(COUNTY == "District of Columbia"), aes(x=year)) +
+  geom_line(linewidth=ms, aes(y=M, color="M")) +
+  geom_line(linewidth=ms, aes(y=D, color="D")) +
+  scale_y_continuous(limits=c(0, 8000)) +
+  scale_x_continuous(n.breaks = 10) +
+  labs(x="", y="Number of marriages/divorces", 
+       title="DC's number of marriages and divorces relatively stable in the 2010s") +
+  scale_color_manual(
+    name = "",                     # Legend title
+    labels = c("Divorces", "Marriages"),      # Optional custom labels
+    values = c("D"="grey", "M"="steelblue")
+    )
+```
+
+
+```{r}
+
+temp <-
+  df %>% filter(GISJOIN %in% c("G1100010", "G2500250", "G2405100", "G4201010", "G0600750")) %>%
+  group_by(GISJOIN) %>%
+  summarise(M = mean(M, na.rm=T), D = mean(D, na.rm=T), .groups="drop") %>%
+  mutate(city = case_when(
+      GISJOIN == "G0600750" ~ "San Francisco"
+    , GISJOIN == "G4201010" ~ "Philadelphia"
+    , GISJOIN == "G2405100" ~ "Baltimore"
+    , GISJOIN == "G2500250" ~ "Boston"
+    , GISJOIN == "G1100010" ~ "Washington"
+  )) %>%
+  dplyr::left_join(select(out_c, year, city, population, race) %>% 
+                     filter(year==2020, race == "Total, all races") %>% 
+                     select(-year, -race) %>% distinct()
+                   , by="city") %>%
+  mutate(m_rate = M / population * 1000, d_rate = D / population * 1000)
+  
+a <- ggplot(temp, aes(x=city, y=m_rate)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(limits=c(0, 15)) +
+  labs(x="", y="Marriages per 1000 residents", 
+       title="DC has relatively few marriages per 1000 residents") 
+
+b <- ggplot(temp, aes(x=city, y=d_rate)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(limits=c(0, 10)) +
+  labs(x="", y="Divorces per 1000 residents", 
+       title="... and more divorces") 
+
+a / b
 ```
