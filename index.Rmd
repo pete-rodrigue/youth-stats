@@ -28,6 +28,7 @@ library(purrr)
 library(patchwork)
 library(plotly)
 library(readxl)
+library(srvyr)
 
 
 source("api_keys.R")
@@ -283,7 +284,8 @@ While some other cities have had longer-term increases in the number of children
     axis.ticks.x = element_blank(),  # Removes the small tick marks
     axis.text.x  = element_blank()  # Removes the tick labels (numbers)
   ) +
-  facet_wrap(~forcats::fct_reorder(city, rise), scales="free_y")
+  facet_wrap(~forcats::fct_reorder(city, rise), scales="free_y") +
+  ggtitle("DC child population changes compared to other places")
 ```
 
 
@@ -323,7 +325,7 @@ plt <-
             )) +
   labs(x="", y="Number of children", color="",
        caption="Hispanic category not mutually exclusive with other categories.\nSource: U.S. Census Bureau, Decennial Census.",
-       title = "Children in DC by race"
+       title = "Children in DC by race: fewer Black children, other groups saw increase"
          ) +
   theme(
      plot.caption = element_text(hjust = 0)
@@ -723,6 +725,100 @@ names %>% group_by(year) %>% summarise(mean = mean(prob_w, na.rm=T)) %>%
 ```
 
 
+# Income of households with children
+
+```{r, results = 'hide', fig.keep = 'none', message = FALSE, warning = FALSE}
+years <- c(2007, 2024)
+
+# ── 1. Area median household income, each survey year ────────────────────
+dc_msa_ami <- data.frame(
+  year=c(2007, 2024),
+  dc_msa_ami = c(94500, 154700) 
+)
+
+# print(natl_median)   # sanity-check these before going further
+
+
+# ── 2. Pull DC person-level PUMS with replicate weights ──────────────────────
+get_dc_year <- function(yr) {
+  get_pums(
+    variables   = c("AGEP", "HINCP", "NP"),
+    state       = "DC",
+    survey      = "acs1",
+    year        = yr,
+    rep_weights = "person",
+    recode      = FALSE,
+    key         = CENSUS_KEY
+  ) %>%
+    mutate(year = yr)
+}
+
+pums_raw <- map(years, get_dc_year) %>% set_names(years)
+
+# Confirm replicate weights came back for BOTH years
+# map(pums_raw, ~ sum(grepl("^PWGTP\\d+$", names(.x))))   # expect 80 each
+
+# ── 3. Income bins relative to that year's national median ───────────────────
+brks <- c(-Inf, 0.5, 0.8, 1.2, 2.0, Inf)
+labs <- c("<50%", "50–80%", "80–120%", "120–200%", "200%+")
+
+prep <- function(df, dc_msa_ami) {
+  df %>%
+    mutate(
+      hincp     = as.numeric(HINCP),
+      inc_ratio = hincp / dc_msa_ami,
+      inc_grp   = cut(inc_ratio, breaks = brks, labels = labs,
+                      right = FALSE, ordered_result = TRUE)
+    )
+}
+
+# ── 4. Design first, then subset ─────────────────────────────────────────────
+estimate_year <- function(yr) {
+  ami <- dc_msa_ami$dc_msa_ami[dc_msa_ami$year == yr]
+
+  svy <- pums_raw[[as.character(yr)]] %>%
+    prep(dc_msa_ami = ami) %>%
+    to_survey(type = "person", design = "rep_weights")
+
+  svy %>%
+    filter(AGEP < 18, !is.na(hincp)) %>%
+    group_by(inc_grp) %>%
+    summarise(
+      children = survey_total(vartype = "se"),
+      share    = survey_prop(vartype  = "se"),
+      n_unwtd  = unweighted(n())
+    ) %>%
+    mutate(year = yr, dc_msa_ami = ami)
+}
+
+results <- map_dfr(years, estimate_year) %>%
+  select(year, dc_msa_ami, inc_grp, children, children_se,
+         share, share_se, n_unwtd)
+
+# print(results, n = Inf)
+
+a <- ggplot(results, aes(x=factor(year), fill=factor(inc_grp))) +
+  geom_bar(aes(y=children), stat="identity", position='dodge') +
+  labs(x="", y="Number of children") +
+  guides(fill="none")
+
+b <- ggplot(results, aes(x=factor(year), fill=factor(inc_grp))) +
+  geom_bar(aes(y=share), stat="identity", position='dodge') +
+  labs(x="", fill="Income rel. to AMI") +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+(a + b) +
+  plot_annotation(title = "Largest % growth in children from higher-income households") +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+```
+
+
+<br>
+<br>
+<br>
 
 
 # Marriage, birth, and fertility rate trends
@@ -737,9 +833,8 @@ df <- dplyr::inner_join(
   , df, by = c("GEOID"="geoid"))
 ```
 
-<br>
 
-The chart below shows the number of births in DC over time. The fact that DC's youth-age population has risen, even while the number of births has gone down since 2010 suggests a lot of the growth in the child population is due to people moving here with kids.
+The chart below shows the number of births in DC over time. Births in DC increased modestly during the 2010s, then fell again.^[See also https://edscape.dc.gov/page/pop-and-students-number-births-and-birth-rates]
 
 <br>
 
@@ -755,7 +850,12 @@ ggplot(df %>% filter(city=="Washington")
 
 <br>
 
-Demographers calculate the "general fertility rate" by dividing the births by the female population ages 15 to 44, and multiplying by 1,000.^[https://www.ncbi.nlm.nih.gov/books/NBK215693/] The chart below shows DC's GFR over time. This has fallen continuously, which suggests that the increase in births observed above is due to general population increases.
+Demographers calculate the "general fertility rate" by dividing the births by the female population ages 15 to 44, and multiplying by 1,000.^[https://www.ncbi.nlm.nih.gov/books/NBK215693/] The chart below shows DC's GFR over time. This has fallen continuously. 
+
+This suggests that the increasing number of births in DC was less driven by a higher percentage of residents deciding to have children, and more driven by:
+
+1. Increased in-migration of people who would go on to have children in DC
+2. Decreased out-migration of people who would go on to have children in DC
 
 <br>
 
@@ -834,6 +934,229 @@ The chart below shows general fertility rates for the counties encompassing diff
 ```
 
 
+```{r}
+# =========================================================================
+# 1. 2020 CENSUS DATA (DHC File)
+# =========================================================================
+vars_2020 <- c(
+  # Males (Ages 0 to 18)
+  "M0" = "PCT12_003N", "M1" = "PCT12_004N", "M2" = "PCT12_005N", "M3" = "PCT12_006N", 
+  "M4" = "PCT12_007N", "M5" = "PCT12_008N", "M6" = "PCT12_009N", "M7" = "PCT12_010N", 
+  "M8" = "PCT12_011N", "M9" = "PCT12_012N", "M10" = "PCT12_013N", "M11" = "PCT12_014N", 
+  "M12" = "PCT12_015N", "M13" = "PCT12_016N", "M14" = "PCT12_017N", "M15" = "PCT12_018N", 
+  "M16" = "PCT12_019N", "M17" = "PCT12_020N", "M18" = "PCT12_021N",
+  # Females (Ages 0 to 18)
+  "F0" = "PCT12_107N", "F1" = "PCT12_108N", "F2" = "PCT12_109N", "F3" = "PCT12_110N", 
+  "F4" = "PCT12_111N", "F5" = "PCT12_112N", "F6" = "PCT12_113N", "F7" = "PCT12_114N", 
+  "F8" = "PCT12_115N", "F9" = "PCT12_116N", "F10" = "PCT12_117N", "F11" = "PCT12_118N", 
+  "F12" = "PCT12_119N", "F13" = "PCT12_120N", "F14" = "PCT12_121N", "F15" = "PCT12_122N", 
+  "F16" = "PCT12_123N", "F17" = "PCT12_124N", "F18" = "PCT12_125N"
+)
+
+dc_2020_raw <- get_decennial(
+  geography = "state", state = "DC", key=CENSUS_KEY,
+  variables = vars_2020, year = 2020, sumfile = "dhc"
+)
+
+dc_2020_binned <- dc_2020_raw %>%
+  mutate(age = as.numeric(str_remove(variable, "^[MF]"))) %>%
+  mutate(age_group = case_when(
+    age < 3  ~ "under 3",         age < 5  ~ "3 but under 5",
+    age < 7  ~ "5 but under 7",   age < 9  ~ "7 but under 9",
+    age < 11 ~ "9 but under 11",  age < 13 ~ "11 but under 13",
+    age < 15 ~ "13 but under 15", age < 17 ~ "15 but under 17",
+    age < 19 ~ "17 and under 19"
+  )) %>%
+  group_by(age_group) %>%
+  summarise(pop_2020 = sum(value))
+
+# =========================================================================
+# 2. 2010 CENSUS DATA (SF1 File)
+# =========================================================================
+vars_2010 <- c(
+  # Males (Ages 0 to 18)
+  "M0" = "P014003", "M1" = "P014004", "M2" = "P014005", "M3" = "P014006", 
+  "M4" = "P014007", "M5" = "P014008", "M6" = "P014009", "M7" = "P014010", 
+  "M8" = "P014011", "M9" = "P014012", "M10" = "P014013", "M11" = "P014014", 
+  "M12" = "P014015", "M13" = "P014016", "M14" = "P014017", "M15" = "P014018", 
+  "M16" = "P014019", "M17" = "P014020", "M18" = "P014021",
+  # Females (Ages 0 to 18)
+  "F0" = "P014024", "F1" = "P014025", "F2" = "P014026", "F3" = "P014027", 
+  "F4" = "P014028", "F5" = "P014029", "F6" = "P014030", "F7" = "P014031", 
+  "F8" = "P014032", "F9" = "P014033", "F10" = "P014034", "F11" = "P014035", 
+  "F12" = "P014036", "F13" = "P014037", "F14" = "P014038", "F15" = "P014039", 
+  "F16" = "P014040", "F17" = "P014041", "F18" = "P014042"
+)
+
+dc_2010_raw <- get_decennial(
+  geography = "state", state = "DC", key=CENSUS_KEY,
+  variables = vars_2010, year = 2010, sumfile = "sf1"
+)
+
+dc_2010_binned <- dc_2010_raw %>%
+  mutate(age = as.numeric(str_remove(variable, "^[MF]"))) %>%
+  mutate(age_group = case_when(
+    age < 3  ~ "under 3",         age < 5  ~ "3 but under 5",
+    age < 7  ~ "5 but under 7",   age < 9  ~ "7 but under 9",
+    age < 11 ~ "9 but under 11",  age < 13 ~ "11 but under 13",
+    age < 15 ~ "13 but under 15", age < 17 ~ "15 but under 17",
+    age < 19 ~ "17 and under 19"
+  )) %>%
+  group_by(age_group) %>%
+  summarise(pop_2010 = sum(value))
+
+# =========================================================================
+# 3. 2000 CENSUS DATA (SF1 File)
+# =========================================================================
+vars_2000 <- c(
+  # Males (Ages 0 to 18)
+  "M0" = "PCT012003", "M1" = "PCT012004", "M2" = "PCT012005", "M3" = "PCT012006", 
+  "M4" = "PCT012007", "M5" = "PCT012008", "M6" = "PCT012009", "M7" = "PCT012010", 
+  "M8" = "PCT012011", "M9" = "PCT012012", "M10" = "PCT012013", "M11" = "PCT012014", 
+  "M12" = "PCT012015", "M13" = "PCT012016", "M14" = "PCT012017", "M15" = "PCT012018", 
+  "M16" = "PCT012019", "M17" = "PCT012020", "M18" = "PCT012021",
+  # Females (Ages 0 to 18)
+  "F0" = "PCT012107", "F1" = "PCT012108", "F2" = "PCT012109", "F3" = "PCT012110", 
+  "F4" = "PCT012111", "F5" = "PCT012112", "F6" = "PCT012113", "F7" = "PCT012114", 
+  "F8" = "PCT012115", "F9" = "PCT012116", "F10" = "PCT012117", "F11" = "PCT012118", 
+  "F12" = "PCT012119", "F13" = "PCT012120", "F14" = "PCT012121", "F15" = "PCT012122", 
+  "F16" = "PCT012123", "F17" = "PCT012124", "F18" = "PCT012125"
+)
+
+dc_2000_raw <- get_decennial(
+  geography = "state", state = "DC", key=CENSUS_KEY,
+  variables = vars_2000, year = 2000, sumfile = "sf1"
+)
+
+dc_2000_binned <- dc_2000_raw %>%
+  mutate(age = as.numeric(str_remove(variable, "^[MF]"))) %>%
+  mutate(age_group = case_when(
+    age < 3  ~ "under 3",         age < 5  ~ "3 but under 5",
+    age < 7  ~ "5 but under 7",   age < 9  ~ "7 but under 9",
+    age < 11 ~ "9 but under 11",  age < 13 ~ "11 but under 13",
+    age < 15 ~ "13 but under 15", age < 17 ~ "15 but under 17",
+    age < 19 ~ "17 and under 19"
+  )) %>%
+  group_by(age_group) %>%
+  summarise(pop_2000 = sum(value))
+
+# =========================================================================
+# 4. COMBINE AND SORT ALL YEARS
+# =========================================================================
+dc_final_trends <- dc_2000_binned %>%
+  full_join(dc_2010_binned, by = "age_group") %>%
+  full_join(dc_2020_binned, by = "age_group") %>%
+  mutate(age_group = factor(age_group, levels = c(
+    "under 3", "3 but under 5", "5 but under 7", "7 but under 9", 
+    "9 but under 11", "11 but under 13", "13 but under 15", 
+    "15 but under 17", "17 and under 19"
+  ))) %>%
+  filter(age_group != "17 and under 19") %>%
+  arrange(age_group) %>%
+  mutate(
+      pct_2000 = pop_2000 / sum(pop_2000)
+    , pct_2010 = pop_2010 / sum(pop_2010)
+    , pct_2020 = pop_2020 / sum(pop_2020)
+    , change_pct_2000_2020 = pct_2020 - pct_2000
+    , raw_change = pop_2020 - pop_2000
+    )
+```
+
+<br>
+
+The table below shows population trends by age group. The population of very young children has grown, while other age groups' populations have declined somewhat (although 2020 may have been an especially low year).
+
+<br>
+
+```{r}
+dc_final_trends %>%
+  select(-starts_with("pct_"), -change_pct_2000_2020) %>%
+  rename(  `Age group` = age_group
+         , `2000 population` = pop_2000
+         , `2010 population` = pop_2010
+         , `2020 population` = pop_2020
+         , `'00 - '20 change` = raw_change
+         ) %>%
+  mutate(`Tot. change '00 - '20` = sum(`'00 - '20 change`)) %>%
+  knitr::kable()
+```
+
+<br>
+
+Net migration for children in DC has been negative for decades, but during the 2010s, it was less negative.
+
+<br>
+
+```{r}
+temp_df <- read_csv("~/GitHub/youth-stats/data/net_migration_wisc.csv") %>%
+  mutate(group = case_when(
+      group=="Total"~"All"
+    , group=="NH_Black" ~ "Non-Hisp. Black"
+    , group=="NH_White" ~ "Non-Hisp. White" 
+    )
+    ) %>%
+  mutate(age = factor(age, levels = c("0-4", "5-9", "10-14", "15-19"))) %>%
+  filter(age != "15-19")
+
+ggplot(temp_df, aes(x=age, y=net_migration_per_100_people, fill=factor(decade))) +
+  geom_bar(stat = "identity", position="dodge") +
+  scale_fill_manual(values = c("#041C39", "#1070E5", "#67A6F4")) +
+  facet_grid(~group) +
+  labs(
+      x="", y="Net migration per 100 people", title="Child net migration increased in the 2010s"
+      , fill=""
+    , caption="Egan-Robertson, David, Katherine J. Curtis, Richelle L. Winkler, Kenneth M. Johnson, and Caitlin Bourbeau,\nAge-Specific Net Migration Estimates for US Counties, 1950-2020.\nApplied Population Laboratory, University of Wisconsin - Madison, 2024. Web.") +
+  theme(
+    plot.caption = element_text(hjust = 0)
+  )
+```
+
+<br>
+
+This tracks with population trends across all age groups, which show that DC's 2010s population boom was largely driven by increasing net migration.
+
+<br>
+
+```{r}
+df <- read_csv("~/GitHub/youth-stats/data/components_of_population_change.csv") %>%
+  select(-`...11`) %>%
+  select(Description, Year, Births, Deaths
+         , `Net International Migration`, `Net Domestic Migration`, `Residual`) %>%
+  mutate(Deaths = Deaths * -1) %>%
+  pivot_longer(cols = -c("Description", "Year"), names_to = "var") %>%
+  filter(Description %in% c(
+      "District of Columbia"
+    , "Arlington County, VA"
+    , "Montgomery County, MD"
+    , "Prince George's County, MD"
+    )
+    ) %>%
+  filter(Year!=1999) %>%
+  group_by(Year, Description) %>%
+  mutate(Total = sum(value)) %>%
+  ungroup() %>%
+  mutate(var = case_when(
+      var=="Net Domestic Migration" ~ "Net Dom. Mig."
+    , var=="Net International Migration" ~ "Net Intl. Mig."
+    , .default=var
+  ))
+
+ggplot(data=df) +
+  geom_bar(
+             aes(x=Year, y=value, fill=factor(var))
+           , stat="identity"
+           ) +
+  geom_line(aes(x=Year, y=Total)) +
+  facet_wrap(~Description) +
+  labs(x="", y="Population gain/loss", fill=""
+       , caption="Source: StatsAmerica, U.S. Census Bureau"
+       , title="DC's 2010s population growth driven by net migration"
+       ) +
+  theme(
+    plot.caption = element_text(hjust=0)
+  )
+```
+
 <br>
 
 Finally, the chart below shows marriage and divorce counts.^[National Center for Family & Marriage Research (2023). County-level marriage and divorce data, United States, 2011-2019, (Version 1.0). Marriage, Divorce, & Birth Data Compass. Bowling Green State University. Retrieved from http://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-marriage-divorce-data-2011-2019.html ]
@@ -899,3 +1222,18 @@ b <- ggplot(temp, aes(x=city, y=d_rate)) +
 
 a / b
 ```
+
+<br>
+<br>
+<br>
+
+# Conclusion
+
+* Some of DC's increase in youth-age population during the 2010s was due to an increased number of births, because more people giving birth lived here--but it was not do to an increase in the fertility rate of the population. 
+* A lot of this increase in the number of births was due to increased net migration of families with children. 
+* This increased net migration seemed to be concentrated among Hispanic, White, and higher-income residents. DC's population of Black children has fallen over time. While the number of low-income children has grown, the share of children in DC from lower-income families has shrunk.
+* Some of DC's youth-age population growth is, statistically, a reversion to levels seen during the 1990s.
+
+
+
+
