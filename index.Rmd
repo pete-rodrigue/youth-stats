@@ -333,6 +333,158 @@ plt <-
     )
 ```
 
+
+
+
+# Why did DC's youth-age population increase during the 2010s?
+
+
+```{r}
+library(dplyr); library(tidyr); library(ggplot2); library(cluster)
+
+# Merge the 1990s/2000s file with the 2010s file
+old <- read.csv("netmigration_1787377368964.csv", colClasses = c(fips = "character"))
+new <- read.csv("netmigration_1787377054156.csv", colClasses = c(fips = "character"))
+df  <- left_join(old, select(new, -stname, -name), by = "fips")
+
+ages    <- c(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75)
+periods <- c("9" = "1990s", "0" = "2000s", "1" = "2010s")
+
+# ---- 1. Three-decade decomposition, ages 0-14 ---------------------------
+decomp <- function(row, p) {
+  e <- setNames(as.numeric(row[paste0("e", p, "ttt", ages)]), ages)
+  m <- setNames(as.numeric(row[paste0("m", p, "ttt", ages)]), ages)
+  births  <- e["0"] + e["5"]        # surviving births during the decade
+  retain  <- e["10"]                # start-cohort aged 0-4, still 0-14 at end
+  agedout <- e["15"] + e["20"]      # start-cohort aged 5-14, now 15+
+  netmig  <- m["0"] + m["5"] + m["10"]
+  p_end   <- sum(e[c("0","5","10")] + m[c("0","5","10")])
+  tibble(births = births, agedout = -agedout, netmig = netmig,
+         change = p_end - (retain + agedout))
+}
+
+dc <- df %>% filter(fips == "11001")
+tab <- bind_rows(lapply(names(periods), function(p)
+  decomp(dc, p) %>% mutate(decade = periods[[p]])))
+print(tab)
+
+tab %>%
+  pivot_longer(births:change, names_to = "component") %>%
+  mutate(component = factor(component, c("births","agedout","netmig","change"),
+                            c("Surviving births","Aged out","Net migration","Net change"))) %>%
+  ggplot(aes(component, value, fill = decade)) +
+  geom_col(position = "dodge") + geom_hline(yintercept = 0) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "DC child population change, ages 0-14", x = NULL, y = "Children") +
+  theme_minimal()
+ggsave("plots/dc_child_components_3dec.png", width = 8, height = 4.5, dpi = 200)
+
+# ---- 2. Peer clustering on the 2010s age signature ----------------------
+rate_cols <- paste0("r1ttt", ages)
+pop <- rowSums(df[paste0("e1ttt", ages)]) + rowSums(df[paste0("m1ttt", ages)])
+
+sub <- df %>%
+  mutate(pop = pop) %>%
+  filter(substr(fips, 3, 5) != "000",            # drop state totals
+         pop >= 150000,
+         if_all(all_of(rate_cols), ~ !is.na(.)))
+
+X <- scale(as.matrix(sub[rate_cols]))            # shape, not magnitude
+
+# nearest neighbours to DC
+dcx  <- X[sub$fips == "11001", ]
+sub$dist <- sqrt(rowSums(sweep(X, 2, dcx)^2))
+sub %>% arrange(dist) %>% slice(2:13) %>% select(name, stname, dist, pop) %>% print()
+
+set.seed(1)
+sub$cl <- kmeans(X, centers = 6, nstart = 25)$cluster
+dc_cl  <- sub$cl[sub$fips == "11001"]
+sub %>% filter(cl == dc_cl) %>% arrange(desc(pop)) %>% select(name, stname, pop) %>% print()
+
+# cluster profiles
+sub %>% group_by(cl) %>% summarise(n = n(), across(all_of(rate_cols), mean)) %>%
+  print(width = Inf)
+
+# sensitivity: does DC's grouping survive other k?
+for (k in 4:7) {
+  set.seed(1); lab <- kmeans(X, centers = k, nstart = 25)$cluster
+  cat("k =", k, "| DC cluster size:", sum(lab == lab[sub$fips == "11001"]), "\n")
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <br>
 
 While the numbers of Hispanic and White children have risen in DC since 2010, the number of Black children has continued to fall. 
