@@ -81,7 +81,7 @@ ggplot(cpop, aes(x=year, y=as.numeric(count))) +
 
 <br>
 
-If we look farther back in time, we can see that DC's youth population used to be much higher, both in absolute and percentage terms. The percentage of children has continued to fall, even as the number has risen. (Note that this data uses "under 15" as opposed to "under 18.")
+If we look farther back in time, we can see that DC's youth population used to be much higher, both in absolute and percentage terms. The percentage of children has continued to fall, even as the number has risen. 
 
 <br>
 
@@ -428,7 +428,9 @@ dc_final_trends %>%
          ) %>%
   knitr::kable(digits = 0, format.args = list(big.mark = ","))
 ```
-
+ 
+ <br><br>
+ 
 # Why did DC's youth-age population increase during the 2010s?
 
 ```{r}
@@ -496,21 +498,31 @@ sum(births_increase, ageout_increase, migrat_increase))
 The chart below uses Census data analyzed by the University of Wisconsin's [Applied Population Laboratory](https://netmigration.wisc.edu/) to decompose changes in DC's youth population into three categories:
 
 * *The number of births*
-    * This increased from `r fmt(tab$births[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$births[tab$decade=="2010s"])` in the 2010s (+`r fmt(births_increase)`).
-    * This was `r percent_increases[1]`% of the total increase from the 2000s to the 2010s.
-    * As we'll see below, this change wasn't due to an increase in the fertility rate (or the likelihood that a given person decides to have children). DC's fertility rate has fallen almost every year since the mid-2000s, which itself represented a decline from the early 1990s. The reason births increased was that DC's overall population was increasing, as net migration in each year became positive (or at least less negative). In other words, there were just more parents and soon-to-be parents living in DC during the 2010s.
-    * It is also worth noting that whether "births increased" depends on which year you use as the base year. Births increased from the 2000s to the 2010s. But births only increased by `r fmt(tab$births[tab$decade=="2010s"] - tab$births[tab$decade=="1990s"])` from the 1990s to the 2010s. The general population increase counteracted the falling fertility rate.
+    * This increased from `r fmt(tab$births[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$births[tab$decade=="2010s"])` in the 2010s (+`r fmt(births_increase)`, or `r percent_increases[1]`% of the total increase from the 2000s to the 2010s).
+
 
 * *The number of children aging out of childhood*
-    * This increased from `r fmt(tab$agedout[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$agedout[tab$decade=="2010s"])` in the 2010s (+`r fmt(ageout_increase)`).
-    * This was `r percent_increases[2]`% of the total increase from the 2000s to the 2010s.
-    * Of the three factors, this was the single biggest contributor to the child population increase. This increase isn't exactly a policy achievement. It's more a statistical artifact that exists because there just weren't that many 5-to-14-year-olds living in DC in 2010, who would age out of childhood by 2020. And that is largely because the 2000s were the nadir of DC's youth-age population. See the appendix for more.
+    * This increased from `r fmt(tab$agedout[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$agedout[tab$decade=="2010s"])` in the 2010s (+`r fmt(ageout_increase)`, or `r percent_increases[2]`% of the '00-'20 total increase).
+
 
 * *Less child net out-migration*
-    * This increased from `r fmt(tab$netmig[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$netmig[tab$decade=="2010s"])` in the 2010s (+`r fmt(migrat_increase)`).
-    * This was `r percent_increases[3]`% of the total increase from the 2000s to the 2010s.
-    * The 2010s saw more positive youth net migration (though it was still negative for all youth ages). The second chart below shows these trends for all age groups. See the appendix for more.
+    * This increased from `r fmt(tab$netmig[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$netmig[tab$decade=="2010s"])` in the 2010s (+`r fmt(migrat_increase)`, or `r percent_increases[3]`% of the '00-'20 total increase).
 
+
+*More on births*
+
+As we'll see below, this change wasn't due to an increase in the fertility rate (or the likelihood that a given person decides to have children). DC's fertility rate has fallen almost every year since the mid-2000s, which itself represented a decline from the early 1990s. The reason births increased was that DC's overall population was increasing, as net migration in each year became positive (or at least less negative). In other words, there were just more parents and soon-to-be parents living in DC during the 2010s.
+
+It is also worth noting that whether "births increased" depends on which year you use as the base year. Births increased from the 2000s to the 2010s. But births only increased by `r fmt(tab$births[tab$decade=="2010s"] - tab$births[tab$decade=="1990s"])` from the 1990s to the 2010s. The general population increase counteracted the falling fertility rate.
+
+*More on aging out*
+
+Of the three factors, this was the single biggest contributor to the child population increase. This increase isn't exactly a policy achievement. It's more a statistical artifact that exists because there just weren't that many 5-to-14-year-olds living in DC in 2010, who would age out of childhood by 2020. And that is largely because the 2000s were the nadir of DC's youth-age population. So the 2010s increase is partly due to the fact that DC started from a low base number of children in the 2000s. See the appendix for more.
+
+*More on net migration*
+
+The 2010s saw more positive youth net migration (though it was still negative for all youth ages). The second chart below shows these trends for all age groups. See the appendix for more.
+    
 ```{r}
 tab %>%
   pivot_longer(births:change, names_to = "component") %>%
@@ -523,6 +535,11 @@ tab %>%
        x = NULL, y = "Children") +
   theme_minimal()
 ```
+<br>
+
+Note in the chart below that net migration particularly increased in the 2010s for people in their 30s. Many thirty-somethings become new parents, so the fact that DC had more 30-somethings in the 2010s partly explains the increase in births during the decade.
+
+<br>
 
 ```{r}
 # ---- 1b. Net migration rate by age, all three decades ------------------
@@ -623,7 +640,7 @@ decompose_by_age <- function(df, county_fips = "11001") {
 }
 
 dc_age <- decompose_by_age(df)
-as.data.frame(dc_age) %>% knitr::kable(digits = 0, format.args = list(big.mark = ","))
+# as.data.frame(dc_age) %>% knitr::kable(digits = 0, format.args = list(big.mark = ","))
 
 
 appendix_p1 <- dc_age %>%
@@ -889,7 +906,7 @@ c <- ggplot(results, aes(x=factor(year), fill=factor(inc_grp))) +
 ```{r}
 a
 
-(b + c) +
+appendix_income_chart <- (b + c) +
   plot_annotation(title = "Largest % growth in children from higher-income households,\nthough DC generally experienced a shift towards a bimodal income distribution") +
   plot_layout(guides = "collect") & 
   theme(legend.position = "bottom")
@@ -1111,6 +1128,15 @@ The plot shows the number of children that DC residents listed on their federal 
 
 ![](plots/number_of_children.png)
 
+<br>
+
+The chart below shows more detail on the distribution of family income in DC over time.
+
+<br>
+
+```{r}
+appendix_income_chart
+```
 
 ## Decomposing population changes
 
