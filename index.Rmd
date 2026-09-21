@@ -13,8 +13,10 @@ date: "2026-08-12"
 </style>
 ```
 
-```{r setup, echo = T, warning=F, message=F, }
-knitr::opts_chunk$set(echo = T, warning=F, message=F, out.width = "100%")
+```{r setup, echo = T, warning=F, message=F}
+knitr::opts_chunk$set(echo = T, 
+                      warning=F, message=F,
+                      out.width = "100%")
 
 library(dplyr)
 library(ggplot2)
@@ -53,7 +55,7 @@ This page looks at why that might be.
 
 # How many kids live in DC?
 
-The chart below shows DC's youth population between 1990 and 2025. After falling between 1995 and 2010, the number has ticked up again, with a COVID-induced dip recently. (Tax returns show slightly different totals; see appendix).
+The chart below shows DC's youth population between 1990 and 2025. After falling between 1995 and 2010, the number has ticked up again, with a COVID-induced dip recently. Note that tax returns show slightly different totals, and the Census under-counted children in 2020. KidsCount figures are based on Census population estimates, which run about 10,000 above the 2020 census count used elsewhere on this page.
 
 <br>
 
@@ -223,7 +225,7 @@ out_c %>%
   geom_bar(stat = "identity") +
   labs(y="", x="Share of population that is children",
        caption="Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.",
-       title="Compared to urban U.S. counties within 20% of DC's\noverall population, DC still has relatively few children") +
+       title= "Compared to large-city counties within 20% of DC's\n population, DC has relatively few children") +
   guides(fill="none") +
   scale_x_continuous(labels = scales::label_percent()) +
   theme(
@@ -234,7 +236,7 @@ out_c %>%
 
 <br>
 
-Relative to other U.S. urban counties, DC has relatively few children, both in absolute terms, and as a share of its population. (Keep in mind that the data below pulls information at the county-level, so DC suburbs are excluded, which may make the counts look somewhat lower than in, say, Houston, where Harris County encompasses some of the city's suburbs).
+Relative to other U.S. urban counties, DC has relatively few children as a share of its population.
 
 <br>
 
@@ -263,14 +265,14 @@ b <- out_c %>% filter(race == "Total, all races", year==2020) %>%
   guides(fill="none") +
   scale_x_continuous(labels = scales::label_percent())
 
-a + b + plot_annotation(
-  title = 'DC has relatively few children',
-  caption = 'Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.',
-  theme = theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    )
-  )
+# a + b + plot_annotation(
+#   title = 'DC has relatively few children',
+#   caption = 'Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.',
+#   theme = theme(
+#       plot.title = element_text(size = 16, face = 'bold')
+#     , plot.caption = element_text(hjust = 0)
+#     )
+#   )
 
 b + plot_annotation(
   title = 'DC has relatively few children',
@@ -284,7 +286,7 @@ b + plot_annotation(
 
 <br>
 
-While some other cities have had longer-term increases in the number of children, DC's increase has been more of a return to a level previously seen in the 1990s. The line charts below show number of children in 2000, 2010, and 2020.
+While some other cities have had longer-term increases in the number of children, DC's increase has been more of a return to a level previously seen around 2000. The line charts below show number of children in 2000, 2010, and 2020.
 
 <br>
 
@@ -443,7 +445,9 @@ dc_final_trends <- dc_2000_binned %>%
 
 <br>
 
-The table below shows population trends by age group. The population of very young children has grown, while other age groups' populations have declined somewhat (although 2020 may have been an especially low year). The overall change from 2000 to 2020 was +278.
+The table below shows population trends by age group. The population of very young children has grown, while other age groups' populations have declined somewhat (although 2020 may have been an especially low year). The overall change from 2000 to 2020 was +`r fmt(sum(dc_final_trends$raw_change))`. 
+
+Note: these totals differ somewhat from the numbers in the charts in the next section, which are taken from analysis by the University of Wisconsin's [Applied Population Laboratory](https://netmigration.wisc.edu/). The APL totals better account for Census child under-counts. Specifically, APL adjusts the 2010 starting population using national Census under-count rates, and the 2020 ending population uses the Census Bureau's 2020 Estimates Base, which incorporates administrative data, rather than the raw count. As a result, APL's 2010 child population (ages 0–14) is about 1,600 higher than the Census count, and its 2020 figure is about 10,500 higher.
 
 <br>
 
@@ -494,13 +498,14 @@ stopifnot(all(paste0(rep(c("e","m","r"), each = 3 * length(ages)),
 decomp <- function(row, p) {
   e <- setNames(as.numeric(row[paste0("e", p, "ttt", ages)]), ages)
   m <- setNames(as.numeric(row[paste0("m", p, "ttt", ages)]), ages)
-  births  <- e["0"] + e["5"]
-  retain  <- e["10"]
-  agedout <- e["15"] + e["20"]
-  netmig  <- m["0"] + m["5"] + m["10"]
-  p_end   <- sum(e[c("0", "5", "10")] + m[c("0", "5", "10")]) # end of period value is expected pop + # migrants
-  tibble(births = births, agedout = -agedout, netmig = netmig,
-         change = p_end - (retain + agedout))
+  births  <- unname(e["0"] + e["5"])
+  retain  <- unname(e["10"])
+  agedout <- unname(e["15"] + e["20"])
+  netmig  <- unname(m["0"] + m["5"] + m["10"])
+  p_end   <- sum(e[c("0","5","10")] + m[c("0","5","10")])
+  change  <- p_end - (retain + agedout)
+  stopifnot(abs(change - (births - agedout + netmig)) < 1)
+  tibble(births = births, agedout = -agedout, netmig = netmig, change = change)
 }
 
 decompose_county <- function(df, county_fips) {
@@ -525,33 +530,35 @@ percent_increases <-
 sum(births_increase, ageout_increase, migrat_increase))
 ```
 
-The chart below uses Census data analyzed by the University of Wisconsin's [Applied Population Laboratory](https://netmigration.wisc.edu/) to decompose changes in DC's youth population into three categories:
+The chart below uses Census data analyzed by the University of Wisconsin's [Applied Population Laboratory](https://netmigration.wisc.edu/) to decompose changes in DC's youth population into three categories, which each contributed roughly equally to DC's youth population increase during the 2010s:
 
-* *The number of births*
-    * This increased from `r fmt(tab$births[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$births[tab$decade=="2010s"])` in the 2010s (+`r fmt(births_increase)`, or `r percent_increases[1]`% of the total increase from the 2000s to the 2010s).
+* *More surviving births*
+    * This increased from `r fmt(tab$births[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$births[tab$decade=="2010s"])` in the 2010s (+`r fmt(births_increase)`, or `r percent_increases[1]`% of the difference between the 2000s' and 2010s' net change).
 
 
-* *The number of children aging out of childhood*
-    * This increased from `r fmt(tab$agedout[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$agedout[tab$decade=="2010s"])` in the 2010s (+`r fmt(ageout_increase)`, or `r percent_increases[2]`% of the '00-'20 total increase).
+* *Fewer children aging out of childhood*
+    * This fell from `r fmt(-tab$agedout[tab$decade=="2000s"])` in the 2000s to `r fmt(-tab$agedout[tab$decade=="2010s"])` in the 2010s (`r fmt(ageout_increase)` fewer, or `r percent_increases[2]`% of the difference between the 2000s' and 2010s' net change).
 
 
 * *Less child net out-migration*
-    * This increased from `r fmt(tab$netmig[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$netmig[tab$decade=="2010s"])` in the 2010s (+`r fmt(migrat_increase)`, or `r percent_increases[3]`% of the '00-'20 total increase).
+    * This increased from `r fmt(tab$netmig[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$netmig[tab$decade=="2010s"])` in the 2010s (+`r fmt(migrat_increase)`, or `r percent_increases[3]`% of the difference between the 2000s' and 2010s' net change).
 
 
 *More on births*
 
-As we'll see below, this change wasn't due to an increase in the fertility rate (or the likelihood that a given person decides to have children). DC's fertility rate has fallen almost every year since the mid-2000s, which itself represented a decline from the early 1990s. The reason births increased was that DC's overall population was increasing, as net migration in each year became positive (or at least less negative). In other words, there were just more parents and soon-to-be parents living in DC during the 2010s.
+This is the number of children born during the decade who survived to the end of the decade. As we'll see below, this change wasn't due to an increase in the fertility rate (i.e. the likelihood that a given person decides to have children). DC's fertility rate has fallen almost every year since the mid-2000s, which itself represented a decline from the early 1990s. The reason births increased was that DC's overall population was increasing, as net migration in each year became positive (or at least less negative). In other words, there were just more parents and soon-to-be parents living in DC during the 2010s.
 
-It is also worth noting that whether "births increased" depends on which year you use as the base year. Births increased from the 2000s to the 2010s. But births only increased by `r fmt(tab$births[tab$decade=="2010s"] - tab$births[tab$decade=="1990s"])` from the 1990s to the 2010s. The general population increase counteracted the falling fertility rate.
+It is also worth noting that whether "births increased" depends on which year you use as the base year. Births increased from the 2000s to the 2010s. But births only increased by `r fmt(tab$births[tab$decade=="2010s"] - tab$births[tab$decade=="1990s"])` from the 1990s to the 2010s. The general population increase counteracted the falling fertility rate.^[Note that births in urban counties, like DC, may be overstated because some are recorded by hospital location rather than mother's residence; for DC, this would make child out-migration look larger than it was, by artificially increasing the number of DC births. It's not clear, however, that this bias would have changed over time.]
+
+
 
 *More on aging out*
 
-Of the three factors, this was the single biggest contributor to the child population increase. This increase isn't exactly a policy achievement. It's more a statistical artifact that exists because there just weren't that many 5-to-14-year-olds living in DC in 2010, who would age out of childhood by 2020. And that is largely because the 2000s were the nadir of DC's youth-age population. So the 2010s increase is partly due to the fact that DC started from a low base number of children in the 2000s. See the appendix for more.
+This increase isn't exactly a policy achievement. It's more a statistical artifact that exists because there just weren't that many 5-to-14-year-olds living in DC in 2010, who would age out of childhood by 2020. And that is largely because the 2000s were the nadir of DC's youth-age population. So the 2010s increase is partly due to the fact that DC started from a low base number of children in the 2000s. See the appendix for more.
 
 *More on net migration*
 
-The 2010s saw more positive youth net migration (though it was still negative for all youth ages). The second chart below shows these trends for all age groups. See the appendix for more.
+The 2010s saw more positive youth net migration (though it was still negative for all youth ages). The second chart below shows these trends for all age groups. Note that some of the improvement in net migration may reflect differences in how APL adjusted the 2010 and 2020 populations for under-counts. It is possible APL's methodology better accounts for under-counting in 2020, relative to 2010, which would make net out-migration appear to decrease in 2020, relative to 2010. See the appendix for more.
     
 ```{r}
 tab %>%
@@ -701,49 +708,49 @@ appendix_p2 <- dc_age %>%
 
 
 
-# Decomposing youth population changes during the 2010s: race
+# Decomposing youth population changes: race
 
 <br>
 
-While the numbers of Hispanic and White children have risen in DC since 2010, the number of Black children has continued to fall. These trends also appear in school enrollment data (see appendix).
+While the numbers of Hispanic and Non-Hispanic White children have risen in DC since 2010, the number of Black children has continued to fall. These trends also appear in school enrollment data (see appendix).
 
 <br>
 
 ```{r}
+
+race_df <- out_c %>%
+  filter(city == "Washington",
+         race %in% c("Total, all races", "Black alone",
+                     "Hispanic or Latino", "White alone, not Hispanic")) %>%
+  select(year, race, children) %>%
+  pivot_wider(names_from = race, values_from = children) %>%
+  transmute(year,
+            All        = `Total, all races`,
+            Black      = `Black alone`,
+            Hispanic   = `Hispanic or Latino`,
+            `White (NH)` = `White alone, not Hispanic`,
+            Other      = All - Black - Hispanic - `White (NH)`) %>%
+  pivot_longer(-year, names_to = "race", values_to = "children")
+
 plt <-
-  ggplot(out_c %>% filter(city=="Washington", race != "White alone, not Hispanic") %>%
-           group_by(city, year) %>%
-           mutate(
-             race = case_when(
-               race %in% c(
-               "AIAN alone", "Asian alone", "NHPI alone", 
-               "Some other race alone", "Two or more races"
-             ) ~ "Other"
-             , race == "Black alone" ~ "Black"
-             , race == "Hispanic or Latino" ~ "Hispanic"
-             , race == "White alone" ~ "White"
-             , race == "Total, all races" ~ "All"
-             , .default = race
-             )
-           ) %>% ungroup() %>%
-           group_by(city, year, race) %>%
+  ggplot(race_df %>%
+           group_by(year, race) %>%
            summarise(children = sum(children), .groups  = 'drop')
          , aes(x=year, y=children, color=factor(race))
          ) +
   geom_line(linewidth=ms) +
   scale_y_continuous(
       labels = scales::label_comma()
-    # , limits = c(0, 115e3)
     ) +
   scale_color_manual(values = c(
               "All"=total_col
             , "Black"=black_col
             , "Hispanic"=hispa_col
             , "Other"=other_col
-            , "White"=white_col
+            , "White (NH)"=white_col
             )) +
   labs(x="", y="Number of children", color="",
-       caption="Hispanic category not mutually exclusive with other categories.\nSource: U.S. Census Bureau, Decennial Census.",
+       caption = "White is non-Hispanic. Black alone includes a small number of Hispanic Black children.\n2010-2020 changes in 'Other' partly reflect the 2020 race question redesign.\nSource: U.S. Census Bureau, Decennial Census.",
        title = "Children in DC by race: fewer Black children, other groups saw increase"
          ) +
   theme(
@@ -754,9 +761,7 @@ plt <-
 plt
 ```
 
-Part of what is likely happening here is that white parents are more likely to move to the District (or remain in DC, if they were existing residents) than they were 40 years ago. This would be part of a broader trend: the reversal of white flight in large U.S. urban areas. Meanwhile, higher housing costs have led (or financially forced) many Black residents to move to the suburbs.[^1]
-
-[^1]: See Yesim Sayin, Kids in the Neighborhood: The District Has More Children, But They Are Not Where They Used to Be. <https://ora-cfo.dc.gov/blog/kids-neighborhood-district-has-more-children-they-are-not-where-they-used-be>
+Part of what is likely happening here is that non-Hispanic white parents are more likely to move to the District (or remain in DC, if they were existing residents) than they were 40 years ago. This would be part of a broader trend: the reversal of white flight in large U.S. urban areas. Meanwhile, higher housing costs have led (or financially forced) many Black residents to move to the suburbs.^[See Yesim Sayin, Kids in the Neighborhood: The District Has More Children, But They Are Not Where They Used to Be. <https://ora-cfo.dc.gov/blog/kids-neighborhood-district-has-more-children-they-are-not-where-they-used-be>]
 
 ```{r}
 races <- c(A = "White alone", B = "Black alone", C = "AIAN alone",
@@ -789,17 +794,20 @@ out <- raw |>
     any_child_u18  = c03 + c10 + c16,
     any_child_u6   = c04 + c05 + c11 + c12 + c17 + c18,
     any_child_6_17 = c05 + c06 + c12 + c13 + c18 + c19) |>
-  arrange(year, race_hh)
+  arrange(year, race_hh) %>%
+  mutate(race_hh = ifelse(race_hh == "Hispanic or Latino", "Hisp. or Latino", race_hh)) %>%
+  mutate(race_hh = ifelse(race_hh == "White alone, not Hispanic", "White alone (NH)", race_hh))
+  
 
 a <-
   out %>%
-  filter(race_hh %in% c("Black alone", "Hispanic or Latino", "White alone")) %>%
+  filter(race_hh %in% c("Black alone", "Hisp. or Latino", "White alone (NH)")) %>%
   ggplot(aes(x=race_hh, y=any_child_u6, fill=race_hh, group=factor(year))) +
   geom_bar(stat="identity", position="dodge") +
   scale_fill_manual(values = c(
               "Black alone"=black_col
-            , "Hispanic or Latino"=hispa_col
-            , "White alone"=white_col
+            , "Hisp. or Latino"=hispa_col
+            , "White alone (NH)"=white_col
             )) +
   scale_y_continuous(labels = scales::label_comma()) +
   labs(x="", y="", 
@@ -815,13 +823,13 @@ a <-
 
 b <-
   out %>%
-  filter(race_hh %in% c("Black alone", "Hispanic or Latino", "White alone")) %>%
+  filter(race_hh %in% c("Black alone", "Hisp. or Latino", "White alone (NH)")) %>%
   ggplot(aes(x=race_hh, y=any_child_6_17, fill=race_hh, group=factor(year))) +
   geom_bar(stat="identity", position="dodge") +
   scale_fill_manual(values = c(
               "Black alone"=black_col
-            , "Hispanic or Latino"=hispa_col
-            , "White alone"=white_col
+            , "Hisp. or Latino"=hispa_col
+            , "White alone (NH)"=white_col
             )) +
   scale_y_continuous(labels = scales::label_comma()) +
   labs(x="", y=""
@@ -841,9 +849,8 @@ a + b + plot_annotation(
 )
 ```
 
-# Decomposing youth population changes during the 2010s: income
+# Decomposing youth population changes: income
 
-Since the mid-2000s, the proportion of DC children in higher-income families has increased significantly, as a share of all children.
 
 ```{r, results = 'hide', fig.keep = 'none', message = FALSE, warning = FALSE}
 years <- c(2007, 2024)
@@ -857,8 +864,9 @@ dc_msa_ami <- data.frame(
 
 # ── 2. Pull DC person-level PUMS with replicate weights ──────────────────────
 get_dc_year <- function(yr) {
+  adj <- if (yr <= 2007) "ADJUST" else "ADJINC"
   get_pums(
-    variables   = c("AGEP", "HINCP", "NP"),
+    variables   = c("AGEP", "HINCP", "NP", adj),
     state       = "DC",
     survey      = "acs1",
     year        = yr,
@@ -866,26 +874,32 @@ get_dc_year <- function(yr) {
     recode      = FALSE,
     key         = CENSUS_KEY
   ) %>%
+    rename(any_of(c(ADJINC = "ADJUST"))) %>%
     mutate(year = yr)
 }
 
 pums_raw <- map(years, get_dc_year) %>% set_names(years)
 
-# Confirm replicate weights came back for BOTH years
+# Confirm replicate weights came back for both years
 # map(pums_raw, ~ sum(grepl("^PWGTP\\d+$", names(.x))))   # expect 80 each
 
-# ── 3. Income bins relative to that year's national median ───────────────────
+# ── 3. Income bins relative to HUD MFI (DC HMFA), household-size adjusted ───
 brks <- c(-Inf, 0.5, 0.8, 1.2, 2.0, Inf)
 labs <- c("<50%", "50–80%", "80–120%", "120–200%", "200%+")
 
+hud_adj <- function(np) case_when(
+  np <= 1 ~ .70, np == 2 ~ .80, np == 3 ~ .90, np == 4 ~ 1.00,
+  np == 5 ~ 1.08, np == 6 ~ 1.16, np == 7 ~ 1.24,
+  TRUE    ~ 1.32 + .08 * (np - 8))
+
 prep <- function(df, dc_msa_ami) {
-  df %>%
-    mutate(
-      hincp     = as.numeric(HINCP),
-      inc_ratio = hincp / dc_msa_ami,
-      inc_grp   = cut(inc_ratio, breaks = brks, labels = labs,
-                      right = FALSE, ordered_result = TRUE)
-    )
+  df %>% mutate(
+    adj       = as.numeric(ADJINC),
+    adj       = if_else(adj > 100, adj / 1e6, adj),
+    hincp     = as.numeric(HINCP) * adj,
+    inc_ratio = hincp / (dc_msa_ami * hud_adj(as.numeric(NP))),
+    inc_grp   = cut(inc_ratio, breaks = brks, labels = labs,
+                    right = FALSE, ordered_result = TRUE))
 }
 
 # ── 4. Design first, then subset ─────────────────────────────────────────────
@@ -911,15 +925,19 @@ results <- map_dfr(years, estimate_year) %>%
   select(year, dc_msa_ami, inc_grp, children, children_se,
          share, share_se, n_unwtd)
 
-
+s <- results %>% filter(inc_grp == "200%+") %>% arrange(year) %>% pull(share)
+ 
 a <- ggplot(results %>% filter(inc_grp=="200%+")
             ,  aes(x=factor(year), y=share*100)
             ) +
-  geom_bar(, stat="identity", position='dodge', fill="steelblue") +
-  geom_text(vjust=-1, aes(label=paste0(round(share*100), "%"))) +
+  geom_bar(stat="identity", position='dodge', fill="steelblue") +
+  geom_errorbar(aes(ymin = (share - 1.96 * share_se) * 100,
+                  ymax = (share + 1.96 * share_se) * 100), width = .15) +
+  geom_text(aes(y = (share + 1.96 * share_se) * 100, label=paste0(round(share*100), "%")), vjust = -0.5) +
   labs(x="", y="% of children in families above 200% AMI") +
-  lims(y=c(0, 20)) +
-  ggtitle("Children in families above 200% AMI almost doubled, as share of total children")
+  lims(y=c(0, 25)) +
+  ggtitle(paste0("Share of children in families above 200% AMI rose from ",
+                 round(100 * s[1]), "% to ", round(100 * s[2]), "%"))
 
 b <- ggplot(results, aes(x=factor(year), fill=factor(inc_grp))) +
   geom_bar(aes(y=children), stat="identity", position='dodge') +
@@ -928,10 +946,13 @@ b <- ggplot(results, aes(x=factor(year), fill=factor(inc_grp))) +
 
 c <- ggplot(results, aes(x=factor(year), fill=factor(inc_grp))) +
   geom_bar(aes(y=share*100), stat="identity", position='dodge') +
-  labs(x="", fill="Income rel. to AMI", y="% of children in families by % of AMI") +
+  labs(x="", fill="Income rel. to AMI (size-adj.)", y="% of children in families by % of AMI") +
   theme(legend.position = "bottom")
 ```
 
+Since the mid-2000s, the proportion of DC children in higher-income families rose from 
+`r round(100*results$share[results$year==2007 & results$inc_grp=="200%+"])`% in 2007 to 
+`r round(100*results$share[results$year==2024 & results$inc_grp=="200%+"])`% in 2024.
 
 ```{r}
 a
@@ -951,10 +972,6 @@ The tax data shows a similar trend:
 <br> <br> 
 
 
-```{r}
-
-```
-
 # Fertility rate trends
 
 ```{r}
@@ -967,26 +984,28 @@ df <- dplyr::inner_join(
   , df, by = c("GEOID"="geoid"))
 ```
 
-The chart below shows the number of births in DC over time. Births in DC increased modestly during the 2010s, then fell again.[^2]
-
-[^2]: See also <https://edscape.dc.gov/page/pop-and-students-number-births-and-birth-rates>
+The chart below shows the number of births in DC over time. Births in DC increased modestly during the 2010s, then fell again.^[See also <https://edscape.dc.gov/page/pop-and-students-number-births-and-birth-rates>]
 
 <br>
 
 ```{r}
+dc_b <- df %>% filter(city == "Washington") %>% arrange(year)
+pct_change <- with(dc_b, births[year == 2024] / births[year == 2000] - 1)
+
+
 ggplot(df %>% filter(city=="Washington")
        , aes(x=year, y=births)) +
   geom_line(linewidth=ms) +
   scale_y_continuous(limits = c(0, 12e3)) +
   labs(x="", y="Births in DC", 
-       title="The number of births in DC has risen only slightly since 2000")
+       title=paste0("Births in DC are ", ifelse(pct_change >= 0, "up ", "down "),
+                    abs(round(pct_change * 100)), "% since 2000")
+       )
 ```
 
 <br>
 
-Demographers calculate the "general fertility rate" by dividing the births by the female population ages 15 to 44, and multiplying by 1,000.[^3] The chart below shows DC's GFR over time. This has fallen continuously.
-
-[^3]: <https://www.ncbi.nlm.nih.gov/books/NBK215693/>
+Demographers calculate the "general fertility rate" by dividing the births by the female population ages 15 to 44, and multiplying by 1,000.^[<https://www.ncbi.nlm.nih.gov/books/NBK215693/>] The chart below shows DC's GFR over time. This has steadily fallen.
 
 <br>
 
@@ -1054,96 +1073,24 @@ The chart below shows general fertility rates for the counties encompassing diff
   theme(
     panel.grid = element_blank(),
     axis.title.y = element_blank(), # Removes the main Y-axis title ("mpg")
-    axis.text.y  = element_blank(), # Removes the tick labels (numbers)
-    axis.ticks.y = element_blank(), # Removes the small tick marks
+    # axis.text.y  = element_blank(), # Removes the tick labels (numbers)
+    # axis.ticks.y = element_blank(), # Removes the small tick marks
     
     axis.ticks.x = element_blank(),  # Removes the small tick marks
     axis.text.x  = element_blank()  # Removes the tick labels (numbers)
   ) +
-  facet_wrap(~forcats::fct_reorder(city, change), scales="free_y")
-```
-
-# Marriage and divorce rates
-
-The chart below shows marriage and divorce counts.^[National Center for Family & Marriage Research (2023). County-level marriage and divorce data, United States, 2011-2019, (Version 1.0). Marriage, Divorce, & Birth Data Compass. Bowling Green State University. Retrieved from <http://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-marriage-divorce-data-2011-2019.html>]
-
-<br>
-
-```{r}
-# Source: https://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-marriage-divorce-data-2011-2019.html
-df <- read_excel("data/CL-Mar-Div-2011-2019.xlsx") %>%
-  select(STATE, COUNTY, GISJOIN, starts_with("M"), starts_with("D")) %>%
-  pivot_longer(cols = -c(STATE, COUNTY, GISJOIN)
-               , names_to = c(".value", "year")
-               , names_pattern = "^(.*)([0-9]{4})$"
-               ) %>%
-  mutate(year = as.numeric(year))
-
-c <- ggplot(df %>% filter(COUNTY == "District of Columbia"), aes(x=year)) +
-  geom_line(linewidth=ms, aes(y=M, color="M")) +
-  geom_line(linewidth=ms, aes(y=D, color="D")) +
-  scale_y_continuous(limits=c(0, 8000)) +
-  scale_x_continuous(n.breaks = 10) +
-  labs(x="", y="Number of marriages/divorces", 
-       title="DC's marriage and divorces\nstable in the 2010s") +
-  scale_color_manual(
-    name = "",                     # Legend title
-    labels = c("Divorces", "Marriages"),      # Optional custom labels
-    values = c("D"="grey", "M"="steelblue")
-    ) + theme(legend.position = "top")
-```
-
-```{r}
-
-temp <-
-  df %>% filter(GISJOIN %in% c("G1100010", "G2500250", "G2405100", "G4201010", "G0600750")) %>%
-  group_by(GISJOIN) %>%
-  summarise(M = mean(M, na.rm=T), D = mean(D, na.rm=T), .groups="drop") %>%
-  mutate(city = case_when(
-      GISJOIN == "G0600750" ~ "San Francisco"
-    , GISJOIN == "G4201010" ~ "Philadelphia"
-    , GISJOIN == "G2405100" ~ "Baltimore"
-    , GISJOIN == "G2500250" ~ "Boston"
-    , GISJOIN == "G1100010" ~ "Washington"
-  )) %>%
-  dplyr::left_join(select(out_c, year, city, population, race) %>% 
-                     filter(year==2020, race == "Total, all races") %>% 
-                     select(-year, -race) %>% distinct()
-                   , by="city") %>%
-  mutate(m_rate = M / population * 1000, d_rate = D / population * 1000) %>%
-  mutate(
-    city = case_when(
-      city == "Washington"~"DC",
-      city == "San Francisco"~"San Fran.",
-      city == "Baltimore"~"Balt.",
-      city == "Philadelphia"~"Phila.",
-      city == "Boston"~"Boston"
-    )
-  )
-  
-a <- ggplot(temp, aes(x=city, y=m_rate)) +
-  geom_bar(stat = "identity") +
-  scale_y_continuous(limits=c(0, 15)) +
-  labs(x="", y="Mar./1000 residents", 
-       title="But few marriages/1000 residents") 
-
-b <- ggplot(temp, aes(x=city, y=d_rate)) +
-  geom_bar(stat = "identity") +
-  scale_y_continuous(limits=c(0, 10)) +
-  labs(x="", y="Div./1000 residents", 
-       title="... and more divorces") 
-
-c + (a / b)
+  facet_wrap(~forcats::fct_reorder(city, change)) 
 ```
 
 <br> <br> <br>
 
 # Conclusion
 
-- Some of DC's increase in youth-age population during the 2010s was due to an increased number of births, because more people giving birth lived here--but it was not do to an increase in the fertility rate of the population.
-- A lot of this increase in the number of births was due to increased net migration of families with children.
-- This increased net migration seemed to be concentrated among Hispanic, White, and higher-income residents. DC's population of Black children has fallen over time. While the number of low-income children has grown, the share of children in DC from lower-income families has shrunk.
-- Some of DC's youth-age population growth is, statistically, a reversion to levels seen during the 1990s.
+- Some of DC's 2010s child population growth came from more births. That happened because more adults of childbearing age lived here, not because fertility rose (it fell).
+- Child net out-migration also shrank, though it remained negative at every child age.
+- Roughly a third of the swing from population decline in the 2000s to growth in the 2010s came from a smaller cohort aging out, a legacy of the 2000s' low point in youth population.
+- The population gains were concentrated among Hispanic, non-Hispanic White, and higher-income families. The number of Black children fell.
+- Much of the 2010s growth is actually a return to the child population DC had around 2000.
 
 <br><br><br><br>
 
@@ -1160,7 +1107,7 @@ The plot shows the number of children that DC residents listed on their federal 
 
 <br>
 
-The chart below shows more detail on the distribution of family income in DC over time.
+The chart below shows more detail on the distribution of household income in DC over time.
 
 <br>
 
@@ -1253,9 +1200,9 @@ ggplot(data=df) +
   )
 ```
 
-The chart below use ACS 1-year estimates to show youth net migration in DC over time.
+<!-- The chart below use ACS 1-year estimates to show youth net migration in DC over time. -->
 
-```{r}
+```{r, eval=F}
 years  <- c(2005:2024)          # match the IPUMS out-migration series
 groups <- list("1-4" = 1:4, "5-15" = 5:15)
 
@@ -1324,7 +1271,7 @@ clean_data <- function(df) {
 
 
 # Data from here:
-# https://nces.ed.gov/ccd/elsi/tableGenerator.aspx
+  # https://nces.ed.gov/ccd/elsi/tableGenerator.aspx
 
 
 df1 <- read_csv("~/GitHub/youth-stats/data/ELSI_csv_export_6392212884336770323709.csv", skip = 5) %>% 
@@ -1344,11 +1291,15 @@ df4 <- read_csv("data/ELSI_csv_export_639221340086678151282.csv", skip=5) %>%
 df5 <- read_csv("data/ELSI_csv_export_6392213789371741314818.csv", skip=5) %>%
   clean_data(.)
 
+df6 <- read_csv("data/ELSI_csv_export_6392560370254964395927.csv", skip=5) %>%
+  clean_data(.)
+
 df <-
   dplyr::full_join(df1, df2, by = c("id", "name", "school_year")) %>%
   dplyr::full_join(df3, by = c("id", "name", "school_year")) %>%
   dplyr::full_join(df4, by = c("id", "name", "school_year")) %>%
   dplyr::full_join(df5, by = c("id", "name", "school_year")) %>%
+  dplyr::full_join(df6, by = c("id", "name", "school_year")) %>%
   mutate(id = as.character(id)) %>%
   mutate(across(everything(), ~ na_if(., "†"))) %>%
   mutate(across(everything(), ~ na_if(., "–"))) %>%
@@ -1381,7 +1332,8 @@ tot_enroll <-
     , `AAPI`                = sum(`Asian or Asian/Pacific Islander Students`, na.rm=T)
     , `Two or more`         = sum(`Two or More Races Students`, na.rm=T)
     , `AIAN`                = sum(`American Indian/Alaska Native Students`, na.rm=T)
-    , Other                 = AAPI + AIAN + `Two or more`
+    , NHPI                  = sum(`Nat. Hawaiian or Other Pacific Isl. Students`, na.rm=T)
+    , Other                 = AAPI + AIAN + NHPI + `Two or more`
     , tot_race              = sum(`Total Race/Ethnicity`, na.rm=T)
     , my_sum                = Black + Hispanic + Other + White
     , diff                  = round((my_sum - tot_race)/ tot_race*100, 2)
@@ -1395,11 +1347,9 @@ tot_enroll <-
 
 DC's school enrollment data mirrors these Census trends.
 
-Total enrollment in DC Public Schools (including charter schools) has risen from roughly `r fmt(tot_enroll$Total[tot_enroll$school_year == 1990])` to `r fmt(tot_enroll$Total[tot_enroll$school_year == 2023])` since 1990.[^5] All of this increase came after 2010. Black student enrollment fell, while Hispanic and White student enrollment increased significantly.[^6]
+Total enrollment in DC Public Schools (including charter schools, which first opened in 1996) has risen from roughly `r fmt(tot_enroll$Total[tot_enroll$school_year == 1990])` to `r fmt(tot_enroll$Total[tot_enroll$school_year == 2023])` since 1990.^[U.S. Department of Education, National Center for Education Statistics' [Common Core of Data](https://nces.ed.gov/ccd/elsi/tableGenerator.aspx)] All of this increase came after 2010. Black student enrollment fell, while Hispanic and Non-Hispanic White student enrollment increased significantly.^[Starting around 2010, the Department of Education started listing "2 or more races as an option"; this altered totals for the other groups.]
 
-[^5]: U.S. Department of Education, National Center for Education Statistics' [Common Core of Data](https://nces.ed.gov/ccd/elsi/tableGenerator.aspx)
-
-[^6]: Starting around 2010, the Department of Education started listing "2 or more races as an option"; this altered totals for the other groups.
+In the chart below, the time series ends with the 2023–24 school year.
 
 <br>
 
@@ -1438,7 +1388,7 @@ plt1
 
 <br><br>
 
-Since 1990, Wards 1, 7, and 8 have lost students, at least according to the DoE data that lists school locations. Wards 2, 3, 4, and 5 have seen significant increases. The trend in Ward 6 has been mostly flat.
+Since 1990, schools in wards 1, 7, and 8 have lost students, at least according to the DoE data that lists school locations. Wards 2, 3, 4, and 5 have seen significant increases. The trend in Ward 6 has been mostly flat.^[Because students can attend schools citywide, and many schools opened or closed over this period, this reflects school locations more than where children live per se.]
 
 <br>
 
@@ -1471,7 +1421,8 @@ ward_enroll <- df %>%
     , `AAPI`                = sum(`Asian or Asian/Pacific Islander Students`, na.rm=T)
     , `Two or more`         = sum(`Two or More Races Students`, na.rm=T)
     , `AIAN`                = sum(`American Indian/Alaska Native Students`, na.rm=T)
-    , Other                 = AAPI + AIAN + `Two or more`
+    , NHPI                  = sum(`Nat. Hawaiian or Other Pacific Isl. Students`, na.rm=T)
+    , Other                 = AAPI + AIAN + NHPI + `Two or more`
     , tot_race              = sum(`Total Race/Ethnicity`, na.rm=T)
     , my_sum                = Black + Hispanic + Other + White
     , diff                  = round((my_sum - tot_race)/ tot_race*100, 2)
@@ -1487,12 +1438,12 @@ plt2 <-
   geom_line(linewidth=ms-.2) +
   scale_y_continuous(
       labels = scales::label_comma()
-    , limits = c(3e3, 18e3)
+    , limits = c(0, max(ward_enroll$Total, na.rm=T)+10)
     ) +
   facet_wrap(~WARD) +
   labs(x="", y="Enrollment", 
-       caption="Data includes charter schools. Some schools that did not have location data are omitted. \nSource: U.S. Department of Education, National Center for Education Statistics",
-       title = "Enrollment up recently accross all wards, except wards 1, 7, and 8"
+       caption="Data includes charter schools. Some schools that did not have location data are omitted.\n2022 Ward boundaries used for all years.\nSource: U.S. Department of Education, National Center for Education Statistics",
+       title = "Enrollment at schools located in each ward"
          ) +
   scale_color_brewer(palette = "Set1") +
   theme(
@@ -1505,7 +1456,7 @@ plt2
 
 <br>
 
-The chart below shows how student populations have changed by Ward and demographic group. Hispanic and White enrollment have increased; Black enrollment has decreased.
+Enrollment at schools located in Wards 1, 7, and 8 has fallen since 1990.
 
 <br>
 
@@ -1527,9 +1478,9 @@ plt3 <-
             , "White"=white_col
             )) +
   facet_wrap(~WARD, scales="free_y") +
-  labs(x="", y="Enrollment (in thousands)", color = "Ward",
-       caption="Data includes charter schools. Some schools that did not have location data are omitted. \nSource: U.S. Department of Education, National Center for Education Statistics",
-       title = "Enrollment up recently accross all wards, except wards 1, 7, and 8"
+  labs(x="", y="Enrollment (in thousands)", color = "",
+       caption="Data includes charter schools. Some schools that did not have location data are omitted.\n2022 Ward boundaries used for all years\nSource: U.S. Department of Education, National Center for Education Statistics",
+       title = "Enrollment by race at schools located in each ward"
          ) +
   theme(
      plot.caption = element_text(hjust = 0)
@@ -1538,6 +1489,10 @@ plt3 <-
 
 plt3
 ```
+
+<br><br>
+
+</details>
 
 <br><br>
 
