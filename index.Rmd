@@ -209,6 +209,27 @@ stopifnot(!any(is.na(xwalk$GEOID)))   # catches any name I got wrong
 out_c <- all_counties |>
   inner_join(xwalk, by = "GEOID") |>
   arrange(city, year, race)
+
+dc_pop <- out_c %>% filter(race=="Total, all races", year==2020, NAME=="District of Columbia, District of Columbia") %>% 
+  pull(population)
+
+out_c %>%
+  filter(race=="Total, all races", year==2020) %>%
+  arrange(population) %>%
+  filter(population < dc_pop*1.2, population > dc_pop*.8) %>%
+  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
+  
+  ggplot(aes(y=forcats::fct_reorder(city, share_children), x=share_children, fill=factor(DC))) +
+  geom_bar(stat = "identity") +
+  labs(y="", x="Share of population that is children",
+       caption="Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.",
+       title="Compared to urban U.S. counties within 20% of DC's\noverall population, DC still has relatively few children") +
+  guides(fill="none") +
+  scale_x_continuous(labels = scales::label_percent()) +
+  theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    )
 ```
 
 <br>
@@ -243,6 +264,15 @@ b <- out_c %>% filter(race == "Total, all races", year==2020) %>%
   scale_x_continuous(labels = scales::label_percent())
 
 a + b + plot_annotation(
+  title = 'DC has relatively few children',
+  caption = 'Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.',
+  theme = theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    )
+  )
+
+b + plot_annotation(
   title = 'DC has relatively few children',
   caption = 'Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.',
   theme = theme(
@@ -1511,47 +1541,3 @@ plt3
 
 <br><br>
 
-## Child names
-
-<br>
-
-We can even see the reversal of white flight if look at popular baby names registered with the Social Security Administration. First names more commonly associated with white people in the Census have jumped up, after falling over the latter half of the 20th century.[^7][^8]
-
-[^7]: Kaplan, J (2023). predictrace: Predict the Race and Gender of a Given Name Using Census and Social Security Administration Data. Version 2.0.1. URL: <https://github.com/jacobkap/predictrace>, <https://jacobkap.github.io/predictrace/>.
-
-[^8]: Note that for some names, like "Aiden" or "Genesis" the `predictrace` package doesn't return results.
-
-<br>
-
-```{r}
-library(predictrace)
-library(readxl)
-library(zoo)
-
-# Data comes from here:
-# SSA baby names dataset for Washington DC
-# https://www.ssa.gov/cgi-bin/namesbystate.cgi
-
-names <- read_csv("data/DC.TXT", col_names = FALSE)
-names(names) <- c("state", "gender", "year", "name", "count")
-
-names$prob_w <- predictrace::predict_race(name = names$name, surname = F)$probability_white
-names$prob_b <- predictrace::predict_race(name = names$name, surname = F)$probability_black
-
-names %>% group_by(year) %>% summarise(mean = mean(prob_w, na.rm=T)) %>%
-  ggplot(aes(x=year, y=mean)) +
-  geom_point(color="steelblue", alpha=.8) +
-  geom_line(aes(y = rollmeanr(mean, 5, na.pad = T)), color = "black", linewidth=.75) +
-  theme_minimal() +
-  scale_y_continuous(labels=scales::label_percent()) +
-  labs(x="", y="Avg. modeled probability of 'white' name", color = "",
-       caption="Source: Social Security Administration Popular Baby Names",
-       title = "DC baby names track history of white flight (and return)"
-         ) +
-  theme(
-     plot.caption = element_text(hjust = 0)
-    , panel.grid = element_blank()
-    )
-```
-
-</details>
