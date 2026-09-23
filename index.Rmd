@@ -49,13 +49,15 @@ fmt <- function(num) {
 
 Many U.S. cities have seen their youth-age populations decline. See [this WSJ piece](https://www.wsj.com/us-news/cities-losing-families-children-a860a9b1?st=w78QhH&reflink=desktopwebshare_permalink), for example.
 
-DC is an exception.
+DC is a partial exception: its child population grew over the 2010s, though that mostly returned it to where it stood in 2000.
 
 This page looks at why that might be.
 
 # How many kids live in DC?
 
-The chart below shows DC's youth population between 1990 and 2025. After falling between 1995 and 2010, the number has ticked up again, with a COVID-induced dip recently. Note that tax returns show slightly different totals, and the Census under-counted children in 2020. KidsCount figures are based on Census population estimates, which run about 10,000 above the 2020 census count used elsewhere on this page.
+The chart below shows DC's youth population between 1990 and 2025. After falling between 1995 and 2010, the number has ticked up again, with a COVID-induced dip recently as some families sought out more space in the suburbs.
+^[District of Columbia Population Statistics (2025). KIDS COUNT Data Center. Aecfkidscount; Annie E. Casey Foundation. https://datacenter.aecf.org/data/tables/102-child-population-by-gender]
+^[Methodological note: This page uses populations figures from several different sources, including the American Community Survey, the Decennial Census, and tax returns. Each of these sources shows slightly different population totals. The Decennial Census under-counted children in 2020, for example, but the Census' population estimates try to adjust for this by referencing administrative data. The KidsCount figures shown in this first chart are based on Census population estimates, which run about 10,000 above the 2020 Census count used elsewhere on this page.]
 
 <br>
 
@@ -64,26 +66,46 @@ cpop <- read_excel("data/Child population by gender.xlsx") %>%
   filter(Gender == "Total less than 18", DataFormat=="Number") %>%
   mutate(count = as.numeric(Data), year=as.numeric(TimeFrame))
 
-ggplot(cpop, aes(x=year, y=as.numeric(count))) +
+a <- ggplot(cpop, aes(x=year, y=as.numeric(count))) +
   geom_line(linewidth = ms) +
    scale_y_continuous(
       labels = scales::label_comma()
     , limits = c(0, 140e3)
     ) +
   labs(x="", y="Number of Children", 
-       caption="Chart shows population under 18. Source: KidsCount / The Annie E. Casey Foundation, U.S. Census Bureau",
-       title = "After falling from '95-'10, DC's youth population rose"
+       caption="Source: KidsCount / The Annie E. Casey Foundation, U.S. Census Bureau",
+       title = "Under 18 population"
          ) +
   theme(
      plot.caption = element_text(hjust = 0)
     # , panel.grid = element_blank()
     )
 
+tpop <- read_excel("data/Total population by child and adult populations.xlsx") %>%
+  filter(DataFormat=="Number",  `Child and Adult Populations`=="Total Population") %>%
+  mutate(count = as.numeric(Data), year=as.numeric(TimeFrame))
+
+b <- ggplot(tpop, aes(x=year, y=as.numeric(count))) +
+  geom_line(linewidth = ms) +
+   scale_y_continuous(
+      labels = scales::label_comma()
+    , limits = c(0, NA)
+    ) +
+  labs(x="", y="Number of Total Residents", 
+       title = "Total population"
+         ) +
+  theme(
+     plot.caption = element_text(hjust = 0)
+    # , panel.grid = element_blank()
+    )
+
+a + b
 ```
 
 <br>
 
-If we look farther back in time, we can see that DC's youth population used to be much higher, both in absolute and percentage terms. The percentage of children has continued to fall, even as the number has risen. 
+If we look farther back in time, we can see that DC's youth population used to be much higher, both in absolute and percentage terms. The percentage of children has continued to fall, even as the absolute number has risen, because DC's overall population has been increasing.
+^[Azimeraw, M., & Phillips, J. (2010). District Population Trends 1800 to 2009. District of Columbia State Data Center Monthly Brief. https://planning.dc.gov/sites/default/files/dc/sites/op/publication/attachments/DCOP_SDC_June%25202010%2520Briefing%2520Report.pdf I supplement this time series with 2025 data from KidsCount: https://datacenter.aecf.org/data/tables/99-total-population-by-child-and-adult-populations?loc=10] 
 
 <br>
 
@@ -116,7 +138,7 @@ b <-
 
 a + b + plot_annotation(
   title = "DC's youth population used to be much higher",
-  caption = 'Source: DC Office of Planning, U.S. Census Bureau',
+  caption = 'Source: DC Office of Planning, U.S. Census Bureau, KidsCount / The Annie E. Casey Foundation',
   theme = theme(
       plot.title = element_text(size = 16, face = 'bold')
     , plot.caption = element_text(hjust = 0)
@@ -125,41 +147,6 @@ a + b + plot_annotation(
 ```
 
 ```{r}
-
-sfx <- c("", "A","B","C","D","E","F","G","H","I")
-lbl <- c("Total, all races","White alone","Black alone","AIAN alone","Asian alone",
-         "NHPI alone","Some other race alone","Two or more races",
-         "Hispanic or Latino","White alone, not Hispanic")
-
-kid_cells <- c(3:6, 27:30)   # M/F: under 5, 5-9, 10-14, 15-17
-
-vfmt <- function(year, s, i)
-if (year == 2020) sprintf("P12%s_%03dN", s, i) else sprintf("P012%s%03d", s, i)
-
-pull_kids <- function(year, sumfile, geography, ...) {
-  map2_dfr(sfx, lbl, function(s, l) {
-    vars <- setNames(vfmt(year, s, c(1, kid_cells)),
-                     c("pop_total", paste0("c", kid_cells)))
-    get_decennial(geography = geography, variables = vars, year = year, key = CENSUS_KEY,
-                  sumfile = sumfile, output = "wide", ...) |>
-      mutate(race = l, year = year)
-  }) |>
-    mutate(children = rowSums(across(num_range("c", kid_cells)))) |>
-    transmute(GEOID, NAME, year, race,
-              population = pop_total,
-              children,
-              share_children = children / pop_total)
-}
-
-
-vint <- tibble::tibble(year = c(2000, 2010, 2020), sumfile = c("sf1","sf1","dhc"))
-all_counties <- map2_dfr(vint$year, vint$sumfile, ~pull_kids(.x, .y, "county"))
-
-# chk <- get_decennial("county", c(p1 = "P1_001N"), year = 2020, sumfile = "dhc", key = CENSUS_KEY)
-# all_counties |>
-#   filter(year == 2020, race=="Total, all races") |>
-#   inner_join(chk, by="GEOID") |>
-#   summarise(max_diff = max(abs(population - value)))
 
 xwalk <- tibble::tribble(
   ~city,            ~state, ~county,
@@ -208,30 +195,87 @@ xwalk <- tibble::tribble(
 
 stopifnot(!any(is.na(xwalk$GEOID)))   # catches any name I got wrong
 
+pull_youth_data <- function(year) {
+  cells <- c(3:6, 27:30)   # P012: male/female under 5, 5-9, 10-14, 15-17
+  vars  <- c(total = "P012001",
+             setNames(sprintf("P012%03d", cells), paste0("c", cells)))
+
+  tidycensus::get_decennial("county", variables = vars, year = year,
+                            sumfile = "sf1", output = "wide", key = CENSUS_KEY) |>
+    semi_join(xwalk, by = "GEOID") |>
+    transmute(GEOID, NAME, year = year,
+              race = "Total, all races",
+              population = total,
+              children = rowSums(across(starts_with("c"))),
+              share_children = children / population)
+}
+
+pull_dc_race_data <- function(year) {
+  cells <- c(3:6, 27:30)   # P012: male/female under 5, 5-9, 10-14, 15-17
+  iters <- c(B = "Black alone",
+             H = "Hispanic or Latino",
+             I = "White alone, not Hispanic")
+
+  vars <- unlist(lapply(names(iters), \(s)
+            setNames(sprintf("P012%s%03d", s, cells), paste0(s, "_", cells))))
+
+  tidycensus::get_decennial("county", variables = vars, year = year,
+                            sumfile = "sf1", state = "DC", key = CENSUS_KEY) |>
+    mutate(race = unname(iters[sub("_.*", "", variable)])) |>   # "B_3" → "Black alone"
+    group_by(GEOID, NAME, race) |>
+    summarise(children = sum(value), .groups = "drop") |>
+    mutate(year = year)
+}
+
+k2000 <- bind_rows(pull_youth_data(2000), pull_dc_race_data(2000))
+k2010 <- bind_rows(pull_youth_data(2010), pull_dc_race_data(2010))
+
+
+pull_youth_2020_data <- function() {
+  readr::read_csv(
+    "https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/counties/asrh/cc-est2024-agesex-all.csv",
+    col_types = readr::cols(.default = "c"),
+    locale = readr::locale(encoding = "latin1")) |>
+    filter(YEAR == "2") |>                                   # July 1, 2020
+    mutate(GEOID = paste0(STATE, COUNTY)) |>
+    semi_join(xwalk, by = "GEOID") |>
+    transmute(GEOID,
+              NAME  = paste0(CTYNAME, ", ", STNAME),
+              year  = 2020,
+              race  = "Total, all races",
+              population = as.numeric(POPESTIMATE),
+              children   = population - as.numeric(AGE18PLUS_TOT),
+              share_children = children / population)
+}
+
+pull_dc_race_2020_data <- function() {
+  readr::read_csv(
+    "https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/state/asrh/sc-est2024-alldata6.csv",
+    col_types = readr::cols(.default = "c")) |>
+    filter(STATE == "11", SEX == "0") |>                     # DC, both sexes
+    mutate(across(c(ORIGIN, RACE, AGE), as.integer),
+           pop = as.numeric(POPESTIMATE2020)) |>             # July 1, 2020
+    filter(AGE < 18) |>
+    summarise(
+      `Black alone`               = sum(pop[ORIGIN == 0 & RACE == 2]),
+      `Hispanic or Latino`        = sum(pop[ORIGIN == 2]),
+      `White alone, not Hispanic` = sum(pop[ORIGIN == 1 & RACE == 1])) |>
+    tidyr::pivot_longer(everything(), names_to = "race", values_to = "children") |>
+    mutate(GEOID = "11001",
+           NAME  = "District of Columbia, District of Columbia",
+           year  = 2020)
+}
+
+k2020 <- bind_rows(pull_youth_2020_data(), pull_dc_race_2020_data())
+
+all_counties <- bind_rows(k2000, k2010, k2020)
+
+
 out_c <- all_counties |>
   inner_join(xwalk, by = "GEOID") |>
   arrange(city, year, race)
 
-dc_pop <- out_c %>% filter(race=="Total, all races", year==2020, NAME=="District of Columbia, District of Columbia") %>% 
-  pull(population)
-
-out_c %>%
-  filter(race=="Total, all races", year==2020) %>%
-  arrange(population) %>%
-  filter(population < dc_pop*1.2, population > dc_pop*.8) %>%
-  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
-  
-  ggplot(aes(y=forcats::fct_reorder(city, share_children), x=share_children, fill=factor(DC))) +
-  geom_bar(stat = "identity") +
-  labs(y="", x="Share of population that is children",
-       caption="Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.",
-       title= "Compared to large-city counties within 20% of DC's\n population, DC has relatively few children") +
-  guides(fill="none") +
-  scale_x_continuous(labels = scales::label_percent()) +
-  theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    )
+dc_pop <- out_c |> filter(race == "Total, all races", year == 2020, GEOID == "11001") |> pull(population)
 ```
 
 <br>
@@ -241,17 +285,7 @@ Relative to other U.S. urban counties, DC has relatively few children as a share
 <br>
 
 ```{r}
-a <- out_c %>% filter(race == "Total, all races", year==2020) %>%
-  group_by(city) %>%
-  summarise(children=sum(children, na.rm=T), .groups='drop') %>%
-  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
-  ggplot(aes(y=forcats::fct_reorder(city, children), x=children/1000, fill=factor(DC))) +
-  geom_bar(stat="identity") +
-  labs(x="Number of children (thousands)", y="") + 
-  guides(fill="none") +
-  scale_x_continuous(labels = scales::label_comma())
-
-b <- out_c %>% filter(race == "Total, all races", year==2020) %>%
+out_c %>% filter(race == "Total, all races", year==2020) %>%
   group_by(city) %>%
   summarise(
       children=sum(children, na.rm=T)
@@ -263,20 +297,10 @@ b <- out_c %>% filter(race == "Total, all races", year==2020) %>%
   geom_bar(stat="identity") +
   labs(x="Children as share of population", y="") + 
   guides(fill="none") +
-  scale_x_continuous(labels = scales::label_percent())
-
-# a + b + plot_annotation(
-#   title = 'DC has relatively few children',
-#   caption = 'Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.',
-#   theme = theme(
-#       plot.title = element_text(size = 16, face = 'bold')
-#     , plot.caption = element_text(hjust = 0)
-#     )
-#   )
-
-b + plot_annotation(
-  title = 'DC has relatively few children',
-  caption = 'Charts show county-level data for large U.S. cities in 2020. Source: U.S. Census Bureau, 2020 Decennial Census.',
+  scale_x_continuous(labels = scales::label_percent()) + 
+  plot_annotation(
+  title = "Compared to large-city counties, DC has relatively few children",
+  caption = 'Chart shows county-level data for large U.S. cities in 2020, using Census Bureau Population Estimates.\nSource: Census Bureau Population Estimates (July 1, 2020).',
   theme = theme(
       plot.title = element_text(size = 16, face = 'bold')
     , plot.caption = element_text(hjust = 0)
@@ -286,19 +310,43 @@ b + plot_annotation(
 
 <br>
 
-While some other cities have had longer-term increases in the number of children, DC's increase has been more of a return to a level previously seen around 2000. The line charts below show number of children in 2000, 2010, and 2020.
+The line charts below show number of children in 2000, 2010, and 2020. The y-scales in the plots below are all slightly different, because the counties differ widely in size, but they all start at zero. Urban counties that saw increases in their child population in absolute terms between 2000 and 2020 are shown in green.
+
+While some cities have had longer-term increases in the number of children, DC's increase has been more a return to the level previously seen around 2000.  
+
+The totals below are decennial census counts, so they differ from the KidsCount figures above, which are based on Census Bureau population estimates.^[See methodological note above.] Those estimates correct for the 2020 census's undercount of young children and put DC's 2020 child population at about 126,000, roughly 10% above 2000. But earlier censuses also undercounted young children and weren't adjusted, so the chart below uses census counts for every year to keep the timeseries consistent.
+
+**Takeaway: the District's 2010-2020 increase in child population looks less dramatic when compared to additional years of historical data (e.g. 2000). By census counts, the 2020 youth population was actually slightly below the 2000 youth population.**
 
 <br>
 
-```{r}
-  out_c %>% filter(race == "Total, all races") %>%
+```{r, fig.height=6}
+
+pull_youth_dhc_2020 <- function() {
+  cells <- c(3:6, 27:30)   # P12: male/female under 5, 5-9, 10-14, 15-17
+  vars  <- c(total = "P12_001N",
+             setNames(sprintf("P12_%03dN", cells), paste0("c", cells)))
+
+  tidycensus::get_decennial("county", variables = vars, year = 2020,
+                            sumfile = "dhc", output = "wide", key = CENSUS_KEY) |>
+    semi_join(xwalk, by = "GEOID") |>
+    transmute(GEOID, NAME, year = 2020, race = "Total, all races",
+              population = total,
+              children = rowSums(across(starts_with("c"))),
+              share_children = children / population)
+}
+
+trend_c <- bind_rows(pull_youth_data(2000), pull_youth_data(2010), pull_youth_dhc_2020()) |>
+  inner_join(xwalk, by = "GEOID")
+
+
+trend_c %>% filter(race == "Total, all races") %>%
   group_by(year, city) %>% summarise(children = sum(children, na.rm=T), .groups='drop') %>%
   group_by(city) %>%
-  mutate(rise = if_else(children[year==2010] < children[year==2020], 1, 0)) %>% ungroup() %>%
+  mutate(rise = if_else(children[year==2000] < children[year==2020], 1, 0)) %>% ungroup() %>%
   # mutate(rise = if_else(city == "Washington", 2, rise)) %>%
   ggplot(aes(x=year, y=children, color=factor(rise))) +
   geom_line() +
-  labs(x="", y="Number of children") +
   guides(color="none") +
   scale_x_continuous(n.breaks = 3) +
   scale_color_manual(values = c("#FF3F00", "#70B77E")) +
@@ -311,8 +359,16 @@ While some other cities have had longer-term increases in the number of children
     axis.ticks.x = element_blank(),  # Removes the small tick marks
     axis.text.x  = element_blank()  # Removes the tick labels (numbers)
   ) +
-  facet_wrap(~forcats::fct_reorder(city, rise), scales="free_y") +
-  ggtitle("DC child population changes compared to other places")
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05)) ) +
+  facet_wrap(~forcats::fct_reorder(city, rise)
+             , scales="free_y"
+             ) +
+  ggtitle("DC's child population is back to about where it was in 2000") +
+  labs(x="", y="Number of children", caption="Source: U.S. Census Bureau, Decennial Census.") +
+  theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    )
 ```
 
 ```{r}
@@ -447,7 +503,9 @@ dc_final_trends <- dc_2000_binned %>%
 
 The table below shows population trends by age group. The population of very young children has grown, while other age groups' populations have declined somewhat (although 2020 may have been an especially low year). The overall change from 2000 to 2020 was +`r fmt(sum(dc_final_trends$raw_change))`. 
 
-Note: these totals differ somewhat from the numbers in the charts in the next section, which are taken from analysis by the University of Wisconsin's [Applied Population Laboratory](https://netmigration.wisc.edu/). The APL totals better account for Census child under-counts. Specifically, APL adjusts the 2010 starting population using national Census under-count rates, and the 2020 ending population uses the Census Bureau's 2020 Estimates Base, which incorporates administrative data, rather than the raw count. As a result, APL's 2010 child population (ages 0–14) is about 1,600 higher than the Census count, and its 2020 figure is about 10,500 higher.
+Again, these totals differ somewhat from the numbers in the charts in the next section, which are taken from analysis by the University of Wisconsin's [Applied Population Laboratory](https://netmigration.wisc.edu/). The APL totals better account for Census child under-counts. Specifically, APL adjusts the 2010 starting population using national Census under-count rates, and the 2020 ending population uses the Census Bureau's 2020 Estimates Base, which incorporates administrative data. As a result, APL's 2010 child population (ages 0–14) is about 1,600 higher than the Census count, and its 2020 figure is about 10,500 higher.
+
+**Takeaway: the increase in DC's youth population was concentrated among young children.**
 
 <br>
 
@@ -488,7 +546,7 @@ stopifnot(all(paste0(rep(c("e","m","r"), each = 3 * length(ages)),
                      "ttt", ages) %in% names(df)))
 
 # ---- 1. Decomposition of change in the ages 0-14 population in DC -------------
-# e/m are indexed by age at the END of the decade.
+# e/m are indexed by age at the end of the decade.
 #   e[0], e[5]   surviving births during the decade
 #   e[10]        start-of-decade 0-4 cohort, still 0-14 at the end
 #   e[15], e[20] start-of-decade 5-14 cohort, now aged out of 0-14
@@ -530,56 +588,168 @@ percent_increases <-
 sum(births_increase, ageout_increase, migrat_increase))
 ```
 
-The chart below uses Census data analyzed by the University of Wisconsin's [Applied Population Laboratory](https://netmigration.wisc.edu/) to decompose changes in DC's youth population into three categories, which each contributed roughly equally to DC's youth population increase during the 2010s:
+The University of Wisconsin's [Applied Population Laboratory](https://netmigration.wisc.edu/) breaks out county & state-level population changes in each decade by age group. We use their analysis for DC's population ages 0 to 14. APL also decomposes those changes into component parts:
 
-* *More surviving births*
-    * This increased from `r fmt(tab$births[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$births[tab$decade=="2010s"])` in the 2010s (+`r fmt(births_increase)`, or `r percent_increases[1]`% of the difference between the 2000s' and 2010s' net change).
+1. Births: Children born in DC during the decade who survived to its end. This obviously increases DC's youth population, all else equal.
+2. Migration: In-migration increases DC's youth population; out-migration decreases the population. Net migration is the sum of in- and out-migration.
+3. Age-outs: This is the number of children who turned 15 during the decade (APL reports five-year age groups, so 0–14 is the last age bracket that does not include adults. The next group up, 15–19, mixes children with college-age adults). A child who was 11 in 2010, for example, would be 21 by 2020.
 
-
-* *Fewer children aging out of childhood*
-    * This fell from `r fmt(-tab$agedout[tab$decade=="2000s"])` in the 2000s to `r fmt(-tab$agedout[tab$decade=="2010s"])` in the 2010s (`r fmt(ageout_increase)` fewer, or `r percent_increases[2]`% of the difference between the 2000s' and 2010s' net change).
-
-
-* *Less child net out-migration*
-    * This increased from `r fmt(tab$netmig[tab$decade=="2000s"])` in the 2000s to `r fmt(tab$netmig[tab$decade=="2010s"])` in the 2010s (+`r fmt(migrat_increase)`, or `r percent_increases[3]`% of the difference between the 2000s' and 2010s' net change).
-
-
-*More on births*
-
-This is the number of children born during the decade who survived to the end of the decade. As we'll see below, this change wasn't due to an increase in the fertility rate (i.e. the likelihood that a given person decides to have children). DC's fertility rate has fallen almost every year since the mid-2000s, which itself represented a decline from the early 1990s. The reason births increased was that DC's overall population was increasing, as net migration in each year became positive (or at least less negative). In other words, there were just more parents and soon-to-be parents living in DC during the 2010s.
-
-It is also worth noting that whether "births increased" depends on which year you use as the base year. Births increased from the 2000s to the 2010s. But births only increased by `r fmt(tab$births[tab$decade=="2010s"] - tab$births[tab$decade=="1990s"])` from the 1990s to the 2010s. The general population increase counteracted the falling fertility rate.^[Note that births in urban counties, like DC, may be overstated because some are recorded by hospital location rather than mother's residence; for DC, this would make child out-migration look larger than it was, by artificially increasing the number of DC births. It's not clear, however, that this bias would have changed over time.]
+The chart below shows how each of these elements added or subtracted from DC's population between 2010 and 2020. Overall, child net migration was negative 
+(-`r fmt(100*round(abs(tab$netmig[tab$decade=="2010s"])/100))`). 
+The age-out term will always be negative; roughly `r fmt(100*round(abs(tab$agedout[tab$decade=="2010s"])/100))` people who were children in 2010 were 15 or older by 2020. But these subtractions were outweighed by births
+(+`r fmt(100*round(abs(tab$births[tab$decade=="2010s"])/100))`), so the total youth population was roughly 
+`r fmt(100*round(abs(tab$change[tab$decade=="2010s"])/100))` higher by the end of the decade.
 
 
-
-*More on aging out*
-
-This increase isn't exactly a policy achievement. It's more a statistical artifact that exists because there just weren't that many 5-to-14-year-olds living in DC in 2010, who would age out of childhood by 2020. And that is largely because the 2000s were the nadir of DC's youth-age population. So the 2010s increase is partly due to the fact that DC started from a low base number of children in the 2000s. See the appendix for more.
-
-*More on net migration*
-
-The 2010s saw more positive youth net migration (though it was still negative for all youth ages). The second chart below shows these trends for all age groups. Note that some of the improvement in net migration may reflect differences in how APL adjusted the 2010 and 2020 populations for under-counts. It is possible APL's methodology better accounts for under-counting in 2020, relative to 2010, which would make net out-migration appear to decrease in 2020, relative to 2010. See the appendix for more.
-    
 ```{r}
-tab %>%
-  pivot_longer(births:change, names_to = "component") %>%
-  mutate(component = factor(comp_levels[component], comp_levels)) %>%
-  ggplot(aes(component, value, fill = decade)) +
-  geom_col(position = "dodge") +
-  geom_hline(yintercept = 0) +
-  scale_y_continuous(labels = scales::comma) +
-  labs(title = "DC child population change, ages 0-14",
-       x = NULL, y = "Children") +
-  theme_minimal()
+library(waterfalls)
+to_plot20 <- tab %>% filter(decade=="2010s") %>% tidyr::pivot_longer(-decade) %>% 
+  select(-decade) %>% filter(name!= 'change')
+
+to_plot10 <- tab %>% filter(decade=="2000s") %>% tidyr::pivot_longer(-decade) %>% 
+  select(-decade) %>% filter(name!= 'change')
+
+a <- waterfalls::waterfall(values = round(to_plot20$value)
+                      , labels = c("Births", "Aged out", "Net migration")
+                      , calc_total = T) +
+  labs(x="", y="Number of children", 
+       caption="Source: U.S. Census Bureau, University of Wisconsin Applied Population Laboratory",
+       title = "Despite net negative migration,\nDC's youth population grew between 2010 & 2020") +
+  theme_minimal() +
+  theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    ) +
+  scale_y_continuous(labels = scales::label_comma(accuracy = 1)) 
+  
+# b <- waterfalls::waterfall(values = round(to_plot10$value)
+#                       , labels = to_plot10$name
+#                       , calc_total = T) +
+#   labs(x="", y="Number of children", 
+#        caption="Source: U.S. Census Bureau, University of Wisconsin Applied Population Laboratory",
+#        title = "Despite net negative migration,\nDC's youth population grew between 2010 & 2020") +
+#   theme_minimal() +
+#   theme(
+#       plot.title = element_text(size = 16, face = 'bold')
+#     , plot.caption = element_text(hjust = 0)
+#     ) +
+#   scale_y_continuous(labels = scales::label_comma(accuracy = 1))
+
+a 
 ```
+
+<br><br><br>
+
+The sections below unpack each of these three contributions to the District's 2010s youth population increase.
+
 <br>
 
-Note in the chart below that net migration particularly increased in the 2010s for people in their 30s. Many thirty-somethings become new parents, so the fact that DC had more 30-somethings in the 2010s partly explains the increase in births during the decade.
+## Births
 
-<br>
+DC's overall population was increasing during the 2010s. All else equal, adult population increases will lead to youth population increases, because some of those additional adults will have children. 
+Indeed, births in DC increased during the 2010s, relative to the 2000s.^[National Center for Family & Marriage Research (2026). County-, state-, and national-level birth counts and fertility rates, United States, 1982–2024. Marriage, Divorce, & Birth Data Compass. Bowling Green State University. Retrieved from https://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-birth-data-1982-2024] ^[See also <https://edscape.dc.gov/page/pop-and-students-number-births-and-birth-rates>]
+Note however, that the number of births during the 1990s was actually comparable to the number during the 2010s: `r fmt(tab$births[tab$decade=="1990s"])` versus `r fmt(tab$births[tab$decade=="2010s"])`, respectively. So in one sense, 2010s births were more of a return to 1990s levels than a novel increase (although as discussed below, the demographics of the 2010s increase are different).
 
 ```{r}
-# ---- 1b. Net migration rate by age, all three decades ------------------
+# Data from here:
+  # https://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-birth-data-1982-2024
+fert <- read_excel("data/ncfmr-dc-cntyyr-st-ntl-long-births-rates-1982-2024.xlsx")
+
+fert <- dplyr::inner_join(
+    out_c %>% select(GEOID, NAME, city) %>% distinct()
+  , fert, by = c("GEOID"="geoid"))
+
+dc_b <- fert %>% filter(city == "Washington") %>% arrange(year)
+pct_change <- with(dc_b, births[year == 2024] / births[year == 2000] - 1)
+
+
+ggplot(fert %>% filter(city=="Washington")
+       , aes(x=year, y=births)) +
+  geom_line(linewidth=ms) +
+  labs(x="", y="Births in DC", 
+       title=paste0("DC Births rose during 2010s; ", ifelse(pct_change >= 0, "up ", "down "),
+                    abs(round(pct_change * 100)), "% since 2000"),
+       caption="Source: National Center for Family & Marriage Research, Bowling Green State University"
+       ) +
+  theme_minimal() +
+  theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    ) +
+  scale_y_continuous(labels = scales::label_comma(accuracy = 1),
+                     limits = c(0, NA))
+
+```
+
+Part of the 2010s increase in births during the 2010s can be traced to a specific driver: net in-migration of people in their 30s increased significantly in DC during the decade. There were more people living in DC at the age when many people start families. The line chart in the net-migration section below shows how net migration changed across all age groups over the decades in DC. Note the upward jumps in the 25-39 groups. 
+
+
+There was also a significant drop in infant mortality in DC between the 2000s and 2020. According to the DC Department of Health, there were roughly 8 deaths per 1,000 live births in DC in the early 2010s; this fell to 5.5 deaths per 1,000 live births in the 2019-2023 period.^[Mayor Vincent C. Gray and DC Department of Health announce historic decrease in district’s infant mortality rate. (2016). DC.Gov. https://dchealth.dc.gov/es/release/mayor-vincent-c-gray-and-dc-department-health-announce-historic-decrease-district%E2%80%99s-infant-0] ^[DC health highlights progress in maternal and infant health in perinatal health report | doh. (2016). DC.Gov. https://dchealth.dc.gov/release/dc-health-highlights-progress-maternal-and-infant-health-perinatal-health-report] 
+While this is a huge improvement (and literally a matter of life and death!) it accounts for a relatively small share of DC's total population increase during the 2010s. 
+A drop in infant mortality of 2.5 deaths per 1,000 live births represents roughly `r fmt(to_plot20$value[to_plot20$name=="births"]/1000 * 2.5)` additional births, using the 2010s-era `r fmt(to_plot20$value[to_plot20$name=="births"])` births as a baseline. That's about 
+`r round(to_plot20$value[to_plot20$name=="births"]/1000 * 2.5 / to_plot20$value[to_plot20$name=="births"] * 100, 2)`% of all births during that period.
+So while this drop in infant mortality is obviously a good thing, it is not a major driver of DC's 2010's population increase.
+
+It is also worth noting that the rise in births wasn't due to an increase in the fertility rate (i.e. the likelihood that a given person decides to have children). DC's fertility rate has fallen almost every year since the mid-2000s, which itself represented a decline from the early 1990s.
+Demographers calculate the "general fertility rate" by dividing the number of births by the female population ages 15 to 44, and multiplying by 1,000.^[<https://www.ncbi.nlm.nih.gov/books/NBK215693/>] The chart below shows DC's GFR over time. This has steadily fallen.
+
+
+```{r}
+ggplot(fert %>% filter(city=="Washington")
+       , aes(x=year, y=gfr)) +
+  geom_line(linewidth=ms) +
+  scale_y_continuous(limits = c(0, 75)) +
+  labs(x="", y="General Fertility Rate", 
+       title="DC's General Fertility Rate has fallen over time"
+       , caption="Source: National Center for Family & Marriage Research, Bowling Green State University"
+       ) +
+  theme_minimal() +
+  theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    ) +
+  scale_y_continuous(labels = scales::label_comma(accuracy = 1),
+                     limits = c(0, NA))
+```
+
+DC's GFR is also on the lower end among large U.S. cities (which themselves have mostly seen steady declines in GFR; see appendix).
+
+
+```{r}
+fert %>% filter(year==2024) %>%
+  group_by(city, year) %>%
+  summarise(
+      births=sum(births, na.rm=T)
+    , age1544_fem=sum(age1544_fem, na.rm=T)
+    , gfr = births / age1544_fem
+    , .groups='drop'
+    ) %>%
+  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
+  ggplot(aes(y=forcats::fct_reorder(city, gfr), x=gfr*1000, fill=factor(DC))) +
+  geom_bar(stat="identity") +
+  labs(x="GFR in 2024 (births/1000 women 15-44)", y="",
+       title="DC's GFR is lower than in many urban counties") + 
+  guides(fill="none") +
+  theme_minimal() +
+  theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    ) 
+```
+
+
+**Takeaway: the District's increasing number of births was not due to higher fertility rates, nor, to any significant extent, falling infant mortality. It was mostly driven by population increases among adults near peak family-starting ages. That increase, in turn, was driven by increased net migration: more adults moving to DC during the 2010s, and fewer adults leaving. The increase in births looks less dramatic when comparing to the 1990s instead of the 2000s.**
+
+
+
+## Net migration
+
+As shown in the line chart below, the 2010s saw less negative youth net migration, though it was still negative for all under-15 groups. (Net migration for 20-somethings has been positive for the last three decades, as young adults attend university or start a first job). It is possible that some of the increase in net-migration among very young children is due to policies like universal pre-kindergarten; in analysis not shown here, we attempt to test this hypothesis, by comparing migration rates for very young children to migration rates for pre-teens, whose migration rates would theoretically be less impacted by the pre-k policy change. We do not observe a divergence in migration rates between the two groups, but the data are quite noisy, so it is difficult to draw any real conclusions from the data. 
+
+**Takeaway: Net in-migration of youth has long been negative in DC, but it became less negative during the 2010s.**
+
+```{r}
+# ---- Net migration rate by age, all three decades ------------------
 dc_rates <- bind_rows(lapply(names(periods), function(p) {
   tibble(age = ages, decade = periods[[p]],
          rate = as.numeric(df[df$fips == "11001", paste0("r", p, "ttt", ages)]))
@@ -595,6 +765,49 @@ ggplot(dc_rates, aes(age, rate, colour = decade, group = decade)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
+
+## Children "aging out" of childhood
+
+If you refer back to the first chart in this report, you will notice that 2010 marked the lowest point in DC's youth population in the last 35 years (and also, as the second set of charts show, in the last ~85 years). In other words, there were not that many children, relatively speaking, living in DC in 2010. This means that any increase in the child population after 2010 would look proportionately larger than if the initial child population had been bigger in 2010. This is sometimes called the "low base effect."^[https://en.wikipedia.org/wiki/Low_base_effect] 
+
+In this case, the relatively small number of children in 2010 also means, mechanically, that there were fewer children in the 2010s aging past 14. So some of the large 2010s increase in DC's youth population is due to the fact that there weren't as many existing children aging out of childhood. Put another way: if there had been a much larger number of youth in DC in 2010, that had then aged past 14 by 2020, this would look like a big decline in the youth population, even if the number of births and net migration were held constant.
+
+**Takeaway: roughly a third of the swing from the 2000s to the 2010s reflects the unusually small cohort of children DC had in 2010, an arithmetic legacy of the earlier decline rather than anything new in the 2010s.**
+
+<br>
+
+
+## Putting it all together
+
+The chart below shows how much each factor contributed to the total net change in youth population in DC in each of the last three decades. As discussed above, more births, fewer age-outs, and less negative net migration each contributed to the 2010s story. Each of those factors accounted for roughly a third of the swing from youth population decline in the 2000s to growth in the 2010s.
+
+```{r}
+tab %>%
+  pivot_longer(births:change, names_to = "component") %>%
+  mutate(component = factor(comp_levels[component], comp_levels)) %>%
+  ggplot(aes(component, value, fill = decade)) +
+  geom_col(position = "dodge") +
+  geom_hline(yintercept = 0) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "DC child population change, ages 0-14",
+       x = NULL, y = "Children") +
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```{r, eval=F}
 # ---- 2. Peer clustering, for any decade --------------------------------
@@ -708,19 +921,46 @@ appendix_p2 <- dc_age %>%
 
 
 
+<br><br>
+
+
 # Decomposing youth population changes: race
 
-<br>
+The sections above tell a broad statistical story about why the District's youth population increased during the 2010s. The next two sections break down this increase along race and income lines.
 
-While the numbers of Hispanic and Non-Hispanic White children have risen in DC since 2010, the number of Black children has continued to fall. These trends also appear in school enrollment data (see appendix).
+While the numbers of Hispanic and Non-Hispanic White children have risen in DC since 2010, the number of Black children has continued to fall.^[Note: figures are decennial census counts for all three years. Census population estimates, which adjust for the 2020 undercount of young children, would show a larger 2020 total.]
+These trends also appear in school enrollment data; see appendix. 
 
-<br>
 
 ```{r}
 
-race_df <- out_c %>%
-  filter(city == "Washington",
-         race %in% c("Total, all races", "Black alone",
+pull_dc_race_dhc_2020 <- function() {
+  cells <- c(3:6, 27:30)   # P12: male/female under 5, 5-9, 10-14, 15-17
+  iters <- c(B = "Black alone",
+             H = "Hispanic or Latino",
+             I = "White alone, not Hispanic")
+
+  vars <- unlist(lapply(names(iters), \(s)
+            setNames(sprintf("P12%s_%03dN", s, cells), paste0(s, "_", cells))))
+
+  tidycensus::get_decennial("county", variables = vars, year = 2020,
+                            sumfile = "dhc", state = "DC", key = CENSUS_KEY) |>
+    mutate(race = unname(iters[sub("_.*", "", variable)])) |>
+    group_by(GEOID, NAME, race) |>
+    summarise(children = sum(value), .groups = "drop") |>
+    mutate(year = 2020)
+}
+
+dc_race_c <- bind_rows(
+  trend_c |> filter(GEOID == "11001", race == "Total, all races") |>
+    select(GEOID, NAME, year, race, children),
+  pull_dc_race_data(2000),
+  pull_dc_race_data(2010),
+  pull_dc_race_dhc_2020()
+)
+
+race_df <- dc_race_c %>%
+  filter(race %in% c("Total, all races", "Black alone",
                      "Hispanic or Latino", "White alone, not Hispanic")) %>%
   select(year, race, children) %>%
   pivot_wider(names_from = race, values_from = children) %>%
@@ -731,6 +971,10 @@ race_df <- out_c %>%
             `White (NH)` = `White alone, not Hispanic`,
             Other      = All - Black - Hispanic - `White (NH)`) %>%
   pivot_longer(-year, names_to = "race", values_to = "children")
+
+# quick checks:
+# race_df |> filter(race == "All")     # 114,992 / 100,815 / ~114,400
+# race_df |> filter(race == "Other")   # ~3,600 / ~4,300 / larger in 2020, but positive
 
 plt <-
   ggplot(race_df %>%
@@ -750,7 +994,7 @@ plt <-
             , "White (NH)"=white_col
             )) +
   labs(x="", y="Number of children", color="",
-       caption = "White is non-Hispanic. Black alone includes a small number of Hispanic Black children.\n2010-2020 changes in 'Other' partly reflect the 2020 race question redesign.\nSource: U.S. Census Bureau, Decennial Census.",
+      caption = "White is non-Hispanic. Black alone includes a small number of Hispanic Black children.\n'Other' includes Asian, multiracial, and other groups; its 2020 increase partly reflects the census race question redesign.\nSource: U.S. Census Bureau, Decennial Census.",
        title = "Children in DC by race: fewer Black children, other groups saw increase"
          ) +
   theme(
@@ -761,7 +1005,7 @@ plt <-
 plt
 ```
 
-Part of what is likely happening here is that non-Hispanic white parents are more likely to move to the District (or remain in DC, if they were existing residents) than they were 40 years ago. This would be part of a broader trend: the reversal of white flight in large U.S. urban areas. Meanwhile, higher housing costs have led (or financially forced) many Black residents to move to the suburbs.^[See Yesim Sayin, Kids in the Neighborhood: The District Has More Children, But They Are Not Where They Used to Be. <https://ora-cfo.dc.gov/blog/kids-neighborhood-district-has-more-children-they-are-not-where-they-used-be>]
+Part of what is likely happening here is that non-Hispanic white parents are more likely to move to the District (or remain in DC, if they were existing residents) than they were 40 years ago. See appendix. This would be part of a broader trend: the reversal of white flight in large U.S. urban areas. Meanwhile, higher housing costs have led (or financially forced) many Black residents to move to the suburbs.^[See Yesim Sayin, Kids in the Neighborhood: The District Has More Children, But They Are Not Where They Used to Be. <https://ora-cfo.dc.gov/blog/kids-neighborhood-district-has-more-children-they-are-not-where-they-used-be>]
 
 ```{r}
 races <- c(A = "White alone", B = "Black alone", C = "AIAN alone",
@@ -849,6 +1093,9 @@ a + b + plot_annotation(
 )
 ```
 
+<br>
+
+
 # Decomposing youth population changes: income
 
 
@@ -934,10 +1181,16 @@ a <- ggplot(results %>% filter(inc_grp=="200%+")
   geom_errorbar(aes(ymin = (share - 1.96 * share_se) * 100,
                   ymax = (share + 1.96 * share_se) * 100), width = .15) +
   geom_text(aes(y = (share + 1.96 * share_se) * 100, label=paste0(round(share*100), "%")), vjust = -0.5) +
-  labs(x="", y="% of children in families above 200% AMI") +
+  labs(x="", y="% of children in families above 200% AMI",
+       caption="Source: 2007 and 2024 5-year American Community Survey.") +
   lims(y=c(0, 25)) +
-  ggtitle(paste0("Share of children in families above 200% AMI rose from ",
-                 round(100 * s[1]), "% to ", round(100 * s[2]), "%"))
+  ggtitle(paste0("Share of children in families above 200% AMI\nrose from ",
+                 round(100 * s[1]), "% to ", round(100 * s[2]), "%")) +
+  theme(
+      plot.title = element_text(size = 16, face = 'bold')
+    , plot.caption = element_text(hjust = 0)
+    , panel.grid = element_blank()
+  )
 
 b <- ggplot(results, aes(x=factor(year), fill=factor(inc_grp))) +
   geom_bar(aes(y=children), stat="identity", position='dodge') +
@@ -950,6 +1203,7 @@ c <- ggplot(results, aes(x=factor(year), fill=factor(inc_grp))) +
   theme(legend.position = "bottom")
 ```
 
+The average District youth is now also more likely to come from a high-income family.
 Since the mid-2000s, the proportion of DC children in higher-income families rose from 
 `r round(100*results$share[results$year==2007 & results$inc_grp=="200%+"])`% in 2007 to 
 `r round(100*results$share[results$year==2024 & results$inc_grp=="200%+"])`% in 2024.
@@ -962,95 +1216,53 @@ appendix_income_chart <- (b + c) +
   plot_layout(guides = "collect") & 
   theme(legend.position = "bottom")
 ```
-<br><br>
 
-The tax data shows a similar trend:
+
+Data from individual income tax filings, charted below, show a similar trend. The upper quintile of households increasingly represent a larger share of children in the District.
 
 ![](plots/number_of_children_by_quintile.png)
 
 
 <br> <br> 
 
+# In summary
 
-# Fertility rate trends
+- Much of the 2010s growth is actually a return to the child population DC had around 2000.
+- Some of DC's 2010s child population growth came from more births. That happened because more adults of childbearing age lived here, not because fertility rose (it fell).
+- Child net out-migration also shrank, though it remained negative at every child age.
+- Roughly a third of the swing from population decline in the 2000s to growth in the 2010s came from a smaller cohort aging out, a legacy of the 2000s' low point in youth population. 
+- The population gains were concentrated among Hispanic, non-Hispanic White, and higher-income families. The number of Black children fell.
 
-```{r}
-# Data from here:
-# https://www.bgsu.edu/ncfmr/resources/data/original-data/county-level-birth-data-1982-2024
-df <- read_excel("data/ncfmr-dc-cntyyr-st-ntl-long-births-rates-1982-2024.xlsx")
 
-df <- dplyr::inner_join(
-    out_c %>% select(GEOID, NAME, city) %>% distinct()
-  , df, by = c("GEOID"="geoid"))
-```
+<br><br><br><br>
 
-The chart below shows the number of births in DC over time. Births in DC increased modestly during the 2010s, then fell again.^[See also <https://edscape.dc.gov/page/pop-and-students-number-births-and-birth-rates>]
+# Appendix
+
+<details>
+
+<summary>Click here to show/hide the appendix</summary>
+
+
+The plot shows the number of children that DC residents listed on their federal tax returns. The totals are slightly different from the Census totals, and show a decline starting in 2019, rather than 2020.
+
+![](plots/number_of_children.png)
+
+<br>
+
+The chart below shows more detail on the distribution of household income in DC over time.
 
 <br>
 
 ```{r}
-dc_b <- df %>% filter(city == "Washington") %>% arrange(year)
-pct_change <- with(dc_b, births[year == 2024] / births[year == 2000] - 1)
-
-
-ggplot(df %>% filter(city=="Washington")
-       , aes(x=year, y=births)) +
-  geom_line(linewidth=ms) +
-  scale_y_continuous(limits = c(0, 12e3)) +
-  labs(x="", y="Births in DC", 
-       title=paste0("Births in DC are ", ifelse(pct_change >= 0, "up ", "down "),
-                    abs(round(pct_change * 100)), "% since 2000")
-       )
+appendix_income_chart
 ```
 
-<br>
-
-Demographers calculate the "general fertility rate" by dividing the births by the female population ages 15 to 44, and multiplying by 1,000.^[<https://www.ncbi.nlm.nih.gov/books/NBK215693/>] The chart below shows DC's GFR over time. This has steadily fallen.
-
-<br>
-
-```{r}
-ggplot(df %>% filter(city=="Washington")
-       , aes(x=year, y=gfr)) +
-  geom_line(linewidth=ms) +
-  scale_y_continuous(limits = c(0, 75)) +
-  labs(x="", y="General Fertility Rate", 
-       title="DC's GFR has fallen over time")
-```
-
-<br>
-
-DC's GFR is on the lower end among large U.S. cities.
-
-<br>
-
-```{r}
-df %>% filter(year==2024) %>%
-  group_by(city, year) %>%
-  summarise(
-      births=sum(births, na.rm=T)
-    , age1544_fem=sum(age1544_fem, na.rm=T)
-    , gfr = births / age1544_fem
-    , .groups='drop'
-    ) %>%
-  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
-  ggplot(aes(y=forcats::fct_reorder(city, gfr), x=gfr*1000, fill=factor(DC))) +
-  geom_bar(stat="identity") +
-  labs(x="GFR in 2024", y="") + 
-  guides(fill="none") +
-  # scale_x_continuous(labels = scales::label_comma()) +
-  labs(title="")
-
-```
-
-<br>
 
 The chart below shows general fertility rates for the counties encompassing different U.S. cities between 1982 and 2024. The vast majority of U.S. cities saw large declines in the GFR. DC's decline was sort of in the middle.
 
-<br>
 
 ```{r}
-  df %>% 
+  fert %>% 
   group_by(city, year) %>%
   summarise(
       births=sum(births, na.rm=T)
@@ -1082,38 +1294,6 @@ The chart below shows general fertility rates for the counties encompassing diff
   facet_wrap(~forcats::fct_reorder(city, change)) 
 ```
 
-<br> <br> <br>
-
-# Conclusion
-
-- Some of DC's 2010s child population growth came from more births. That happened because more adults of childbearing age lived here, not because fertility rose (it fell).
-- Child net out-migration also shrank, though it remained negative at every child age.
-- Roughly a third of the swing from population decline in the 2000s to growth in the 2010s came from a smaller cohort aging out, a legacy of the 2000s' low point in youth population.
-- The population gains were concentrated among Hispanic, non-Hispanic White, and higher-income families. The number of Black children fell.
-- Much of the 2010s growth is actually a return to the child population DC had around 2000.
-
-<br><br><br><br>
-
-# Appendix
-
-<details>
-
-<summary>Click here to show/hide the appendix</summary>
-
-
-The plot shows the number of children that DC residents listed on their federal tax returns. The totals are slightly different from the Census totals, and show a decline starting in 2019, rather than 2020.
-
-![](plots/number_of_children.png)
-
-<br>
-
-The chart below shows more detail on the distribution of household income in DC over time.
-
-<br>
-
-```{r}
-appendix_income_chart
-```
 
 ## Decomposing population changes
 
