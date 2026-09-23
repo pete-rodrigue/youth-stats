@@ -139,10 +139,7 @@ b <-
 a + b + plot_annotation(
   title = "DC's youth population used to be much higher",
   caption = 'Source: DC Office of Planning, U.S. Census Bureau, KidsCount / The Annie E. Casey Foundation',
-  theme = theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    )
+  theme = theme(plot.caption = element_text(hjust = 0))
   )
 ```
 
@@ -301,10 +298,7 @@ out_c %>% filter(race == "Total, all races", year==2020) %>%
   plot_annotation(
   title = "Compared to large-city counties, DC has relatively few children",
   caption = 'Chart shows county-level data for large U.S. cities in 2020, using Census Bureau Population Estimates.\nSource: Census Bureau Population Estimates (July 1, 2020).',
-  theme = theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    )
+  theme = theme(plot.caption = element_text(hjust = 0))
   )
 ```
 
@@ -365,10 +359,7 @@ trend_c %>% filter(race == "Total, all races") %>%
              ) +
   ggtitle("DC's child population is back to about where it was in 2000") +
   labs(x="", y="Number of children", caption="Source: U.S. Census Bureau, Decennial Census.") +
-  theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    )
+  theme(plot.caption = element_text(hjust = 0))
 ```
 
 ```{r}
@@ -616,10 +607,7 @@ a <- waterfalls::waterfall(values = round(to_plot20$value)
        caption="Source: U.S. Census Bureau, University of Wisconsin Applied Population Laboratory",
        title = "Despite net negative migration,\nDC's youth population grew between 2010 & 2020") +
   theme_minimal() +
-  theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    ) +
+  theme(plot.caption = element_text(hjust = 0)) +
   scale_y_continuous(labels = scales::label_comma(accuracy = 1)) 
   
 # b <- waterfalls::waterfall(values = round(to_plot10$value)
@@ -672,10 +660,7 @@ ggplot(fert %>% filter(city=="Washington")
        caption="Source: National Center for Family & Marriage Research, Bowling Green State University"
        ) +
   theme_minimal() +
-  theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    ) +
+  theme(plot.caption = element_text(hjust = 0)) +
   scale_y_continuous(labels = scales::label_comma(accuracy = 1),
                      limits = c(0, NA))
 
@@ -704,10 +689,7 @@ ggplot(fert %>% filter(city=="Washington")
        , caption="Source: National Center for Family & Marriage Research, Bowling Green State University"
        ) +
   theme_minimal() +
-  theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    ) +
+  theme(plot.caption = element_text(hjust = 0)) +
   scale_y_continuous(labels = scales::label_comma(accuracy = 1),
                      limits = c(0, NA))
 ```
@@ -731,10 +713,7 @@ fert %>% filter(year==2024) %>%
        title="DC's GFR is lower than in many urban counties") + 
   guides(fill="none") +
   theme_minimal() +
-  theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
-    ) 
+  theme(plot.caption = element_text(hjust = 0)) 
 ```
 
 
@@ -1088,9 +1067,7 @@ b <-
 
 a + b + plot_annotation(
   title = 'Fewer Black families, more White families with young children',
-  subtitle = 'Number of families with children in the 2000, 2010, and 2020 Censuses',
-  theme = theme(plot.title = element_text(size = 16, face = 'bold'))
-)
+  subtitle = 'Number of families with children in the 2000, 2010, and 2020 Censuses')
 ```
 
 <br>
@@ -1187,8 +1164,7 @@ a <- ggplot(results %>% filter(inc_grp=="200%+")
   ggtitle(paste0("Share of children in families above 200% AMI\nrose from ",
                  round(100 * s[1]), "% to ", round(100 * s[2]), "%")) +
   theme(
-      plot.title = element_text(size = 16, face = 'bold')
-    , plot.caption = element_text(hjust = 0)
+      plot.caption = element_text(hjust = 0)
     , panel.grid = element_blank()
   )
 
